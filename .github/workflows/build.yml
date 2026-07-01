@@ -30,6 +30,8 @@ jobs:
 
       - name: Build and push
         env:
-          REPOBASE: ghcr.io/${{ github.repository_owner }}
           PUSH: "1"
-        run: ./build-images.sh
+        run: |
+          REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          export REPOBASE
+          ./build-images.sh
