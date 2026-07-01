@@ -1,0 +1,36 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump piler .deb release referenced in the Dockerfile",
+      "managerFilePatterns": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG PILER_VERSION=(?<currentValue>.*?)\\n"
+      ],
+      "depNameTemplate": "jsuto/piler",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^piler-(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Bump supercronic release referenced in the Dockerfile",
+      "managerFilePatterns": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG SUPERCRONIC_VERSION=(?<currentValue>.*?)\\n"
+      ],
+      "depNameTemplate": "aptible/supercronic",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ubuntu"],
+      "matchFileNames": ["Dockerfile"],
+      "versioning": "loose",
+      "groupName": "ubuntu resolute base image"
+    }
+  ]
+}
