@@ -31,9 +31,76 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         env:
           PUSH: "1"
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           export REPOBASE
           ./build-images.sh
+          echo "image=${REPOBASE}/piler-server:latest" >> "$GITHUB_OUTPUT"
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+
+  validate:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        env:
+          PILER_IMAGE: ${{ needs.build-and-push.outputs.image }}
+        run: |
+          docker pull "${PILER_IMAGE}"
+          docker compose up -d --no-build
+
+      - name: Wait for piler to be ready
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || true)
+            if [ "${code}" = "200" ]; then
+              echo "piler answered HTTP 200 after ${i} tries"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "piler never answered HTTP 200" >&2
+          docker compose logs
+          exit 1
+
+      - name: Send a test email over SMTP and check it gets archived
+        run: |
+          cat > /tmp/test-mail.txt <<'EOF'
+          From: sender@example.com
+          To: recipient@example.com
+          Subject: CI test mail
+
+          This is a test message sent to piler via curl SMTP in CI.
+          EOF
+
+          curl -sS --url smtp://localhost:25 \
+            --mail-from "sender@example.com" \
+            --mail-rcpt "recipient@example.com" \
+            --upload-file /tmp/test-mail.txt
+
+          sleep 3
+
+          count=$(docker compose exec -T mysql \
+            mariadb -upiler -ppiler123 piler -N -e \
+            "SELECT COUNT(*) FROM metadata WHERE subject = 'CI test mail';")
+
+          if [ "${count}" -lt 1 ]; then
+            echo "test mail was not archived" >&2
+            docker compose logs piler
+            exit 1
+          fi
+          echo "test mail archived, ${count} row(s) found"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
