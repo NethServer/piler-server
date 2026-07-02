@@ -84,9 +84,13 @@ RUN sed -i -E \
       -e 's/^\s*user\s+\S+;/user piler;/' \
       -e 's%^pid\s+/run/nginx\.pid;%pid /var/piler/run/nginx.pid;%' \
       /etc/nginx/nginx.conf && \
+    # stream logs to the container's own stdout/stderr instead of files,
+    # so podman/journald capture them and nothing accumulates on disk.
+    ln -sf /dev/stdout /var/log/nginx/access.log && \
+    ln -sf /dev/stderr /var/log/nginx/error.log && \
     sed -i -E \
       -e 's%^pid\s*=.*%pid = /var/piler/run/php-fpm.pid%' \
-      -e 's%^error_log\s*=.*%error_log = /var/piler/run/php-fpm.log%' \
+      -e 's%^error_log\s*=.*%error_log = /dev/stderr%' \
       /etc/php/*/fpm/php-fpm.conf && \
     find /etc/php -name 'www.conf' -exec \
       sed -i -E \
