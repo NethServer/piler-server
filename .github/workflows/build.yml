@@ -9,6 +9,14 @@ on:
       - config/**
       - build-images.sh
       - .github/workflows/build.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - Dockerfile
+      - entrypoint.sh
+      - config/**
+      - build-images.sh
+      - .github/workflows/build.yml
   workflow_dispatch: {}
 
 jobs:
@@ -32,20 +40,36 @@ jobs:
         id: build
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
           image="${REPOBASE}/piler-server"
-          docker buildx build --file Dockerfile \
-            --tag "${image}:${base_image_tag}" \
-            --tag "${image}:latest" \
-            --push .
-          echo "image=${image}:latest" >> "$GITHUB_OUTPUT"
 
-          {
-            echo "### Image URLs"
-            echo '```'
-            echo "${image}:${base_image_tag}"
-            echo "${image}:latest"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tag=$(echo '${{ github.head_ref }}' | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+|-+$//g')
+            docker buildx build --file Dockerfile \
+              --tag "${image}:${tag}" \
+              --push .
+            echo "image=${image}:${tag}" >> "$GITHUB_OUTPUT"
+
+            {
+              echo "### Image URLs"
+              echo '```'
+              echo "${image}:${tag}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
+            docker buildx build --file Dockerfile \
+              --tag "${image}:${base_image_tag}" \
+              --tag "${image}:latest" \
+              --push .
+            echo "image=${image}:latest" >> "$GITHUB_OUTPUT"
+
+            {
+              echo "### Image URLs"
+              echo '```'
+              echo "${image}:${base_image_tag}"
+              echo "${image}:latest"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
     outputs:
       image: ${{ steps.build.outputs.image }}

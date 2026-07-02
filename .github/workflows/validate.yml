@@ -2,7 +2,7 @@ name: validate
 
 on:
   workflow_run:
-    workflows: [build, build-pr]
+    workflows: [build]
     types: [completed]
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
         id: image
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          if [ "${{ github.event.workflow_run.name }}" = "build-pr" ]; then
+          if [ "${{ github.event.workflow_run.event }}" = "pull_request" ]; then
             tag=$(echo '${{ github.event.workflow_run.head_branch }}' | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+|-+$//g')
           else
             tag="latest"
