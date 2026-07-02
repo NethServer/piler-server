@@ -51,7 +51,7 @@ RUN userdel -r ubuntu 2>/dev/null; \
     apt-get install -y --no-install-recommends \
        openssl sysstat catdoc unrtf poppler-utils tnef libtre5 ca-certificates \
        mariadb-client-core python3 python3-mysqldb libzip5 \
-       nginx \
+       curl nginx \
        php-cli php-cgi php-mysql php-fpm php-zip php-ldap php-gd php-curl php-xml php-memcached \
        supervisor && \
     apt-get clean && \
