@@ -16,8 +16,7 @@ jobs:
 
       - name: Check tag matches the Dockerfile version
         run: |
-          base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
-          piler_version=$(grep -oP '^ARG PILER_VERSION=\K.*' Dockerfile)
+          source ./dockerfile-vars.sh
           expected="${piler_version}-${base_image_tag}"
           wanted="${GITHUB_REF_NAME#v}"
           if [[ "${wanted}" != "${expected}" ]]; then

@@ -44,8 +44,7 @@ platforms="${PLATFORMS:-}"
 
 # Read defaults straight from the Dockerfile so this script cannot drift
 # from the image it builds.
-base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
-piler_version=$(grep -oP '^ARG PILER_VERSION=\K.*' Dockerfile)
+source ./dockerfile-vars.sh
 
 image="${repobase}/${reponame}"
 
