@@ -56,9 +56,7 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           else
-            base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
             docker buildx build --file Dockerfile \
-              --tag "${image}:${base_image_tag}" \
               --tag "${image}:latest" \
               --push .
             echo "image=${image}:latest" >> "$GITHUB_OUTPUT"
@@ -66,7 +64,6 @@ jobs:
             {
               echo "### Image URLs"
               echo '```'
-              echo "${image}:${base_image_tag}"
               echo "${image}:latest"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
