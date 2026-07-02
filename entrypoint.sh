@@ -109,6 +109,18 @@ fix_configs() {
       safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
    fi
 
+   # A volume provisioned before the "listen 80 default_server;" fix was
+   # baked into piler-nginx.conf.dist has an already-existing
+   # piler-nginx.conf that the "only if missing" guard above never
+   # touches again, permanently missing its listen directive. Patch it in
+   # if absent, without clobbering the rest of any hand-edited config.
+   if ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
+      log "Adding missing listen directive to ${PILER_NGINX_CONF}"
+
+      safe_sed "$PILER_NGINX_CONF" \
+         '0,/^server \{/s//server {\n        listen 80 default_server;\n        listen [::]:80 default_server;/'
+   fi
+
    if [[ ! -f "$PILER_CONF" ]]; then
       cp "${PILER_CONF}.dist" "$PILER_CONF"
    fi
