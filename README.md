@@ -52,6 +52,40 @@ values:
   serve and where its data files live.
 - `piler-nginx.conf` — the vhost nginx serves piler's web UI from.
 
+### Where the `*.dist` templates come from, and how they're used
+
+`piler.conf`, `config-site.php` and `piler-nginx.conf` above are each
+generated from a `*.dist` template the first time the container starts
+(`piler.conf.dist`, `config-site.dist.php`, `piler-nginx.conf.dist`).
+Those templates ship inside piler's own `.deb` package, installed at
+`/etc/piler/*.dist` by `dpkg -i` in the `Dockerfile`. From there the
+`Dockerfile`:
+
+1. Patches them for this rootless image (php-fpm socket path, and injects
+   the `listen 80 default_server;` directive `piler-nginx.conf.dist` is
+   missing upstream).
+2. Snapshots the patched `/etc/piler` into `/tmp/piler-conf` (`TMP_CONF_DIR`
+   in `entrypoint.sh`) — a path in the image's own writable layer, not the
+   `piler_etc` volume.
+3. Deletes the `*.dist` files from `/etc/piler` itself, since nothing reads
+   them from there.
+
+At every container start, `entrypoint.sh`'s `fix_configs()` reads templates
+from `TMP_CONF_DIR`, never from the `piler_etc` volume. `/etc/piler` is a
+`VOLUME`: anything installed there by `dpkg` only ever reaches a genuinely
+empty volume through podman's one-time copy-up on first mount, then goes
+stale forever on any volume that already existed (e.g. one provisioned by
+an older, buggy image). Sourcing templates from `TMP_CONF_DIR` instead means
+every restart regenerates `piler-nginx.conf` from the *current* image's
+template whenever it's missing a `listen` directive, and upgrading the
+image always ships current templates — nothing about them can go stale in
+the volume, because they're no longer stored there at all.
+
+This only applies to the templates themselves. The four generated files
+they produce remain in the `piler_etc` volume and keep the "write once,
+`safe_sed` patches values in place afterwards" behavior described under
+[Volumes](#volumes) below.
+
 ## Repository layout
 
 - `Dockerfile` — the image itself, a `fetcher` stage plus a `runtime` stage
@@ -135,11 +169,13 @@ Optional:
 ### Volumes
 
 - `piler_etc` (`/etc/piler`) — generated config (`piler.conf`,
-  `config-site.php`, `manticore.conf`, TLS cert/key). `fix_configs()` in
-  `entrypoint.sh` only writes a file here if it doesn't already exist, so
-  editing one by hand persists across restarts. To force regeneration
-  (e.g. after changing an env var that's only applied on first write),
-  delete the corresponding file from the volume and restart the container.
+  `config-site.php`, `manticore.conf`, `piler-nginx.conf`, TLS cert/key).
+  `fix_configs()` in `entrypoint.sh` only writes a file here if it doesn't
+  already exist, so editing one by hand persists across restarts. To force
+  regeneration (e.g. after changing an env var that's only applied on first
+  write), delete the corresponding file from the volume and restart the
+  container. No `*.dist` template lives in this volume — see
+  [above](#where-the-dist-templates-come-from-and-how-theyre-used).
 - `piler_store` (`/var/piler/store`) — the actual archived mail. This is the
   data that matters; back it up.
 
