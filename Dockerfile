@@ -80,7 +80,7 @@ RUN dpkg -i /tmp/piler.deb && \
 # start - relocate them into /var/piler/run instead, which is owned by
 # piler and part of the container's own writable layer.
 RUN sed -i -E \
-      -e 's/^\s*user\s+\S+;/user piler;/' \
+      -e '/^\s*user\s+\S+;/d' \
       -e 's%^pid\s+/run/nginx\.pid;%pid /var/piler/run/nginx.pid;%' \
       /etc/nginx/nginx.conf && \
     sed -i -E \
@@ -89,7 +89,7 @@ RUN sed -i -E \
       /etc/php/*/fpm/php-fpm.conf && \
     find /etc/php -name 'www.conf' -exec \
       sed -i -E \
-        -e 's/^(user|group)\s*=.*/\1 = piler/' \
+        -e '/^(user|group)\s*=/d' \
         -e 's%^listen\s*=.*%listen = /var/piler/run/php-fpm.sock%' \
         -e 's/^listen\.owner\s*=.*/listen.owner = piler/' \
         -e 's/^listen\.group\s*=.*/listen.group = piler/' \
