@@ -81,7 +81,7 @@ RUN dpkg -i /tmp/piler.deb && \
 # start - relocate them into /var/piler/run instead, which is owned by
 # piler and part of the container's own writable layer.
 RUN sed -i -E \
-      -e 's/^\s*user\s+\S+;/user piler;/' \
+      -e '/^\s*user\s+\S+;/d' \
       -e 's%^pid\s+/run/nginx\.pid;%pid /var/piler/run/nginx.pid;%' \
       /etc/nginx/nginx.conf && \
     sed -i -E \
