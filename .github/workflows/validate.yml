@@ -16,19 +16,16 @@ jobs:
 
       - name: Compute image reference
         id: image
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          if [ "${{ github.event.workflow_run.event }}" = "pull_request" ]; then
-            tag=$(echo '${{ github.event.workflow_run.head_branch }}' | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+|-+$//g')
-          else
-            tag="latest"
-          fi
-          echo "image=${REPOBASE}/piler-server:${tag}" >> "$GITHUB_OUTPUT"
+          echo "image=${REPOBASE}/piler-server:${SHA}" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Image tested"
             echo '```'
-            echo "${REPOBASE}/piler-server:${tag}"
+            echo "${REPOBASE}/piler-server:${SHA}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
