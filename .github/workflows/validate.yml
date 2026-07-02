@@ -78,7 +78,7 @@ jobs:
 
       - name: Log in as admin and as auditor through the web UI
         run: |
-          admin_headers=$(curl -sS -D - -o /dev/null \
+          admin_headers=$(curl -sS -D - -o /dev/null -c /tmp/admin-cookie.txt \
             --data-urlencode "username=admin@local" \
             --data-urlencode "password=pilerrocks" \
             http://localhost/login.php)
@@ -107,7 +107,7 @@ jobs:
           boundary="ci-test-boundary"
           {
             echo "From: sender@example.com"
-            echo "To: recipient@example.com"
+            echo "To: admin@local"
             echo "Subject: CI test mail"
             echo "MIME-Version: 1.0"
             echo "Content-Type: multipart/mixed; boundary=\"${boundary}\""
@@ -128,7 +128,7 @@ jobs:
 
           curl -sS --url smtp://localhost:25 \
             --mail-from "sender@example.com" \
-            --mail-rcpt "recipient@example.com" \
+            --mail-rcpt "admin@local" \
             --upload-file /tmp/test-mail.txt
 
           sleep 3
@@ -150,6 +150,27 @@ jobs:
             exit 1
           fi
           echo "test mail archived with ${attachments} attachment(s), ${count} row(s) found"
+
+      - name: Search for the archived mail through the web UI
+        run: |
+          for i in $(seq 1 10); do
+            results=$(curl -sS -b /tmp/admin-cookie.txt \
+              --data-urlencode "searchtype=simple" \
+              --data-urlencode "subject=CI test mail" \
+              --data-urlencode "page=0" \
+              --data-urlencode "sort=1" \
+              --data-urlencode "order=date" \
+              http://localhost/search-helper.php)
+
+            if echo "${results}" | grep -q "CI test mail"; then
+              echo "full-text search found the archived mail after ${i} tries"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "full-text search did not find the archived mail" >&2
+          exit 1
 
       - name: Restart the stack and check the archived mail survives
         run: |
