@@ -1,15 +1,14 @@
-name: build
+name: build-pr
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - Dockerfile
       - entrypoint.sh
       - config/**
       - build-images.sh
-      - .github/workflows/build.yml
-  workflow_dispatch: {}
+      - .github/workflows/build-pr.yml
 
 jobs:
   build-and-push:
@@ -32,12 +31,11 @@ jobs:
         id: build
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
           image="${REPOBASE}/piler-server"
+          tag="pr-${{ github.event.pull_request.number }}"
           docker buildx build --file Dockerfile \
-            --tag "${image}:${base_image_tag}" \
-            --tag "${image}:latest" \
+            --tag "${image}:${tag}" \
             --push .
-          echo "image=${image}:latest" >> "$GITHUB_OUTPUT"
+          echo "image=${image}:${tag}" >> "$GITHUB_OUTPUT"
     outputs:
       image: ${{ steps.build.outputs.image }}
