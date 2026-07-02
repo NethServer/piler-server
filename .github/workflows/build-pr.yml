@@ -37,5 +37,12 @@ jobs:
             --tag "${image}:${tag}" \
             --push .
           echo "image=${image}:${tag}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Image URLs"
+            echo '```'
+            echo "${image}:${tag}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
     outputs:
       image: ${{ steps.build.outputs.image }}

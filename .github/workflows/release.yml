@@ -44,3 +44,12 @@ jobs:
             --tag "${image}:${BASE_IMAGE_TAG}" \
             --tag "${image}:latest" \
             --push .
+
+          {
+            echo "### Image URLs"
+            echo '```'
+            echo "${image}:${RELEASE_TAG}"
+            echo "${image}:${BASE_IMAGE_TAG}"
+            echo "${image}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
