@@ -91,9 +91,16 @@ fix_configs() {
    [[ -f "$PILER_PEM" ]] || make_certificate "$PILER_PEM"
 
    [[ -f /etc/piler/MANTICORE ]] || touch /etc/piler/MANTICORE
-   for f in config-site.dist.php manticore.conf manticore.conf.dist piler-nginx.conf.dist piler.conf.dist; do
-      if [[ ! -f "/etc/piler/${f}" ]]; then cp "${TMP_CONF_DIR}/${f}" /etc/piler; fi
+
+   # These *.dist files are read-only templates shipped by the image, not
+   # user data - always refresh them from TMP_CONF_DIR so a volume that
+   # already has a stale copy (e.g. from an older, buggy image) gets the
+   # current image's version instead of being stuck with it forever.
+   for f in config-site.dist.php manticore.conf.dist piler-nginx.conf.dist piler.conf.dist; do
+      cp "${TMP_CONF_DIR}/${f}" /etc/piler
    done
+
+   [[ -f /etc/piler/manticore.conf ]] || cp "${TMP_CONF_DIR}/manticore.conf" /etc/piler
 
    if [[ ! -f "$PILER_NGINX_CONF" ]]; then
       log "Writing ${PILER_NGINX_CONF}"
