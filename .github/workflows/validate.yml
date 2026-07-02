@@ -58,23 +58,33 @@ jobs:
 
       - name: Check internal services are healthy
         run: |
-          docker compose ps --format json | while read -r c; do
-            name=$(echo "$c" | jq -r '.Name')
-            state=$(echo "$c" | jq -r '.State')
-            health=$(echo "$c" | jq -r '.Health')
+          for i in $(seq 1 30); do
+            failed=0
+            summary=""
+            while read -r c; do
+              name=$(echo "$c" | jq -r '.Name')
+              state=$(echo "$c" | jq -r '.State')
+              health=$(echo "$c" | jq -r '.Health')
 
-            if [ "${state}" != "running" ]; then
-              echo "${name} is not running (state: ${state})" >&2
-              exit 1
+              if [ "${state}" != "running" ]; then
+                failed=1
+              elif [ "${health}" != "" ] && [ "${health}" != "healthy" ]; then
+                failed=1
+              fi
+              summary="${summary}${name}: state=${state} health=${health:-n/a}\n"
+            done < <(docker compose ps --format json)
+
+            if [ "${failed}" -eq 0 ]; then
+              printf '%b' "${summary}"
+              exit 0
             fi
 
-            if [ "${health}" != "" ] && [ "${health}" != "healthy" ]; then
-              echo "${name} is running but not healthy (health: ${health})" >&2
-              exit 1
-            fi
-
-            echo "${name}: state=${state} health=${health:-n/a}"
+            sleep 2
           done
+
+          echo "a service never became healthy" >&2
+          printf '%b' "${summary}" >&2
+          exit 1
 
       - name: Log in as admin and as auditor through the web UI
         run: |
