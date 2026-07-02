@@ -49,8 +49,7 @@ if [[ "${do_tag}" -ne 1 ]]; then
     exit 1
 fi
 
-base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
-piler_version=$(grep -oP '^ARG PILER_VERSION=\K.*' Dockerfile)
+source ./dockerfile-vars.sh
 
 tag="v${piler_version}-${base_image_tag}"
 
