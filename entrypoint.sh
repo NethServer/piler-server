@@ -1,18 +1,7 @@
 #!/bin/bash
 #
 # Entrypoint for the rootless piler image. Based on jsuto/piler's
-# docker/start.sh, with three fixes for issues left open upstream:
-#
-#   - jsuto/piler#475: piler.conf's default pidfile path
-#     (/var/run/piler/piler.pid) never gets created -> pidfile never
-#     written -> `rc.piler status` always reports "NOT running". Redirect
-#     it to /var/piler/run, alongside the other relocated pidfiles.
-#   - jsuto/piler#474: MariaDB client on Ubuntu 26.04 requires TLS by
-#     default, mariadb server in the compose stack has no SSL configured
-#     -> wait_until_mysql_server_is_ready loops forever.
-#   - jsuto/piler#473 (comment): `sed -i` renames a temp file into place,
-#     which fails with "Device or resource busy" when /etc/piler is a
-#     bind mount under some systemd-managed mount setups.
+# docker/start.sh (piler is developed at https://github.com/jsuto/piler).
 #
 set -o errexit
 set -o pipefail
@@ -41,9 +30,9 @@ log() {
    echo "DEBUG:" "$*"
 }
 
-# Fix for jsuto/piler#473: `sed -i` writes a temp file then renames it
-# over the original, which fails with "Device or resource busy" when the
-# target is a bind mount. Write into the existing inode instead.
+# `sed -i` writes a temp file then renames it over the original, which
+# fails with "Device or resource busy" when the target is a bind mount.
+# Write into the existing inode instead.
 safe_sed() {
    local target="$1"
    shift
@@ -218,9 +207,9 @@ init_database() {
 }
 
 create_my_cnf_files() {
-   # Fix for jsuto/piler#474: Ubuntu 26.04's mariadb-client defaults to
-   # requiring TLS on TCP connections; the mariadb server in the compose
-   # stack has no SSL configured, so the connection is refused.
+   # Ubuntu 26.04's mariadb-client defaults to requiring TLS on TCP
+   # connections; the mariadb server in the compose stack has no SSL
+   # configured, so the connection is refused.
    printf "[client]\nhost = %s\nuser = %s\npassword = %s\nssl = false\n[mysqldump]\nhost = %s\nuser = %s\npassword = %s\nssl = false\n" \
       "$MYSQL_HOSTNAME" "$MYSQL_USER" "$MYSQL_PASSWORD" "$MYSQL_HOSTNAME" "$MYSQL_USER" "$MYSQL_PASSWORD" \
       > "$PILER_MY_CNF"
@@ -229,11 +218,11 @@ create_my_cnf_files() {
 }
 
 start_piler() {
-   # Fix for jsuto/piler#475: piler.conf's default pidfile path
-   # (/var/run/piler/piler.pid) never got created, so the pidfile was
-   # never written and `rc.piler status` always reported "NOT running"
-   # even though the daemon was up. fix_configs() redirects pidfile= to
-   # /var/piler/run/piler.pid, so make sure that directory exists too.
+   # piler.conf's default pidfile path (/var/run/piler/piler.pid) never
+   # gets created, so the pidfile is never written and `rc.piler status`
+   # always reports "NOT running" even though the daemon is up.
+   # fix_configs() redirects pidfile= to /var/piler/run/piler.pid, so
+   # make sure that directory exists too.
    mkdir -p /var/piler/run
 
    # No pid file should exist for piler
