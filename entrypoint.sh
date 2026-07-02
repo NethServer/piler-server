@@ -86,43 +86,38 @@ make_piler_key() {
    give_it_to_piler "$f"
 }
 
+write_piler_nginx_conf() {
+   log "Writing ${PILER_NGINX_CONF}"
+
+   cp "${TMP_CONF_DIR}/piler-nginx.conf.dist" "$PILER_NGINX_CONF"
+   safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
+}
+
 fix_configs() {
    [[ -f "$PILER_KEY" ]] || make_piler_key "$PILER_KEY"
    [[ -f "$PILER_PEM" ]] || make_certificate "$PILER_PEM"
 
    [[ -f /etc/piler/MANTICORE ]] || touch /etc/piler/MANTICORE
 
-   # These *.dist files are read-only templates shipped by the image, not
-   # user data - always refresh them from TMP_CONF_DIR so a volume that
-   # already has a stale copy (e.g. from an older, buggy image) gets the
-   # current image's version instead of being stuck with it forever.
-   for f in config-site.dist.php manticore.conf.dist piler-nginx.conf.dist piler.conf.dist; do
-      cp "${TMP_CONF_DIR}/${f}" /etc/piler
-   done
-
+   # *.dist templates are only ever read from TMP_CONF_DIR (the image's own
+   # /etc/piler snapshot, taken at build time - see the Dockerfile), never
+   # from the /etc/piler volume itself. /etc/piler is a VOLUME: whatever
+   # dpkg installs there only reaches it via podman's one-time copy-up on a
+   # genuinely empty volume, so a template read from there would go stale
+   # forever on any volume that already existed. Reading from TMP_CONF_DIR
+   # means every restart regenerates from the current image's template.
    [[ -f /etc/piler/manticore.conf ]] || cp "${TMP_CONF_DIR}/manticore.conf" /etc/piler
 
-   if [[ ! -f "$PILER_NGINX_CONF" ]]; then
-      log "Writing ${PILER_NGINX_CONF}"
-
-      cp "${PILER_NGINX_CONF}.dist" "$PILER_NGINX_CONF"
-      safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
-   fi
-
-   # A volume provisioned before the "listen 80 default_server;" fix was
-   # baked into piler-nginx.conf.dist has an already-existing
-   # piler-nginx.conf that the "only if missing" guard above never
-   # touches again, permanently missing its listen directive. Patch it in
-   # if absent, without clobbering the rest of any hand-edited config.
-   if ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
-      log "Adding missing listen directive to ${PILER_NGINX_CONF}"
-
-      safe_sed "$PILER_NGINX_CONF" \
-         '0,/^server \{/s//server {\n        listen 80 default_server;\n        listen [::]:80 default_server;/'
+   # Also rewrite it if a volume provisioned before the "listen 80
+   # default_server;" fix was baked into the template left it without a
+   # listen directive - the ! -f guard alone only fires once, so a broken
+   # file would otherwise never get regenerated.
+   if [[ ! -f "$PILER_NGINX_CONF" ]] || ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
+      write_piler_nginx_conf
    fi
 
    if [[ ! -f "$PILER_CONF" ]]; then
-      cp "${PILER_CONF}.dist" "$PILER_CONF"
+      cp "${TMP_CONF_DIR}/piler.conf.dist" "$PILER_CONF"
    fi
 
    log "Updating ${PILER_CONF}"
@@ -144,7 +139,7 @@ fix_configs() {
    if [[ ! -f "$CONFIG_SITE_PHP" ]]; then
       log "Writing ${CONFIG_SITE_PHP}"
 
-      cp "${CONFIG_DIR}/config-site.dist.php" "$CONFIG_SITE_PHP"
+      cp "${TMP_CONF_DIR}/config-site.dist.php" "$CONFIG_SITE_PHP"
 
       safe_sed "$CONFIG_SITE_PHP" "s%HOSTNAME%${PILER_HOSTNAME}%"
 
