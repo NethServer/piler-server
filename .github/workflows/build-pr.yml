@@ -32,7 +32,7 @@ jobs:
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           image="${REPOBASE}/piler-server"
-          tag="pr-${{ github.event.pull_request.number }}"
+          tag=$(echo '${{ github.head_ref }}' | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+|-+$//g')
           docker buildx build --file Dockerfile \
             --tag "${image}:${tag}" \
             --push .
