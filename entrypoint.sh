@@ -3,8 +3,10 @@
 # Entrypoint for the rootless piler image. Based on jsuto/piler's
 # docker/start.sh, with three fixes for issues left open upstream:
 #
-#   - jsuto/piler#475: /var/piler/run did not exist -> pidfile never
-#     written -> `rc.piler status` always reports "NOT running".
+#   - jsuto/piler#475: piler.conf's default pidfile path
+#     (/var/run/piler/piler.pid) never gets created -> pidfile never
+#     written -> `rc.piler status` always reports "NOT running". Redirect
+#     it to /var/piler/run, alongside the other relocated pidfiles.
 #   - jsuto/piler#474: MariaDB client on Ubuntu 26.04 requires TLS by
 #     default, mariadb server in the compose stack has no SSL configured
 #     -> wait_until_mysql_server_is_ready loops forever.
@@ -126,7 +128,8 @@ fix_configs() {
       -e "s/tls_enable=.*/tls_enable=1/g" \
       -e "s/sphxhost=.*/sphxhost=${MANTICORE_HOSTNAME}/g" \
       -e "s/rtindex=.*/rtindex=${RT}/g" \
-      -e "s/mysqlsocket=.*/mysqlsocket=/g"
+      -e "s/mysqlsocket=.*/mysqlsocket=/g" \
+      -e "s%pidfile=.*%pidfile=/var/piler/run/piler.pid%g"
 
    give_it_to_piler "$PILER_CONF"
 
@@ -226,9 +229,11 @@ create_my_cnf_files() {
 }
 
 start_piler() {
-   # Fix for jsuto/piler#475: /var/piler/run did not exist in the image,
-   # so the pidfile was never written and `rc.piler status` always
-   # reported "NOT running" even though the daemon was up.
+   # Fix for jsuto/piler#475: piler.conf's default pidfile path
+   # (/var/run/piler/piler.pid) never got created, so the pidfile was
+   # never written and `rc.piler status` always reported "NOT running"
+   # even though the daemon was up. fix_configs() redirects pidfile= to
+   # /var/piler/run/piler.pid, so make sure that directory exists too.
    mkdir -p /var/piler/run
 
    # No pid file should exist for piler

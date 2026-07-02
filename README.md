@@ -3,8 +3,9 @@
 Rootless container image for the piler mail archiving server, fixing a
 handful of startup issues found on Ubuntu 26.04 base images:
 
-- `/var/piler/run` missing → pidfile never written → `rc.piler status`
-  always reports "NOT running".
+- piler.conf's default pidfile path (`/var/run/piler/piler.pid`) is never
+  created → pidfile never written → `rc.piler status` always reports
+  "NOT running".
 - MariaDB client on Ubuntu 26.04 requires TLS by default, while the mariadb
   container has no SSL configured → the startup script loops forever
   waiting for the database.
