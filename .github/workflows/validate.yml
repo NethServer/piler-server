@@ -4,20 +4,26 @@ on:
   workflow_run:
     workflows: [build]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to validate (a commit sha or 'latest')"
+        required: false
+        default: latest
 
 jobs:
   validate:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Compute image reference
         id: image
         env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_tag }}
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           echo "image=${REPOBASE}/piler-server:${SHA}" >> "$GITHUB_OUTPUT"
@@ -50,33 +56,145 @@ jobs:
           docker compose logs
           exit 1
 
-      - name: Send a test email over SMTP and check it gets archived
+      - name: Check internal services are healthy
         run: |
-          cat > /tmp/test-mail.txt <<'EOF'
-          From: sender@example.com
-          To: recipient@example.com
-          Subject: CI test mail
+          docker compose ps --format json | while read -r c; do
+            name=$(echo "$c" | jq -r '.Name')
+            state=$(echo "$c" | jq -r '.State')
+            health=$(echo "$c" | jq -r '.Health')
 
-          This is a test message sent to piler via curl SMTP in CI.
-          EOF
+            if [ "${state}" != "running" ]; then
+              echo "${name} is not running (state: ${state})" >&2
+              exit 1
+            fi
+
+            if [ "${health}" != "" ] && [ "${health}" != "healthy" ]; then
+              echo "${name} is running but not healthy (health: ${health})" >&2
+              exit 1
+            fi
+
+            echo "${name}: state=${state} health=${health:-n/a}"
+          done
+
+      - name: Log in as admin and as auditor through the web UI
+        run: |
+          admin_headers=$(curl -sS -D - -o /dev/null -c /tmp/admin-cookie.txt \
+            --data-urlencode "username=admin@local" \
+            --data-urlencode "password=pilerrocks" \
+            http://localhost/login.php)
+
+          if ! echo "${admin_headers}" | grep -qi '^location:.*route=health/health'; then
+            echo "admin login did not land on the admin health page" >&2
+            echo "${admin_headers}" >&2
+            exit 1
+          fi
+          echo "admin login OK"
+
+          auditor_headers=$(curl -sS -D - -o /dev/null \
+            --data-urlencode "username=auditor@local" \
+            --data-urlencode "password=auditor" \
+            http://localhost/login.php)
+
+          if ! echo "${auditor_headers}" | grep -qi '^location:.*search.php'; then
+            echo "auditor login did not land on the search page" >&2
+            echo "${auditor_headers}" >&2
+            exit 1
+          fi
+          echo "auditor login OK"
+
+      - name: Send a test email with an attachment over SMTP and check it gets archived
+        run: |
+          boundary="ci-test-boundary"
+          {
+            echo "From: sender@example.com"
+            echo "To: admin@local"
+            echo "Subject: CI test mail"
+            echo "MIME-Version: 1.0"
+            echo "Content-Type: multipart/mixed; boundary=\"${boundary}\""
+            echo
+            echo "--${boundary}"
+            echo "Content-Type: text/plain"
+            echo
+            echo "This is a test message sent to piler via curl SMTP in CI."
+            echo
+            echo "--${boundary}"
+            echo "Content-Type: text/plain; name=\"note.txt\""
+            echo "Content-Disposition: attachment; filename=\"note.txt\""
+            echo "Content-Transfer-Encoding: base64"
+            echo
+            base64 <<< "attachment content for the CI test mail"
+            echo "--${boundary}--"
+          } > /tmp/test-mail.txt
 
           curl -sS --url smtp://localhost:25 \
             --mail-from "sender@example.com" \
-            --mail-rcpt "recipient@example.com" \
+            --mail-rcpt "admin@local" \
             --upload-file /tmp/test-mail.txt
 
           sleep 3
 
-          count=$(docker compose exec -T mysql \
+          row=$(docker compose exec -T mysql \
             mariadb -upiler -ppiler123 piler -N -e \
-            "SELECT COUNT(*) FROM metadata WHERE subject = 'CI test mail';")
+            "SELECT COUNT(*), COALESCE(SUM(attachments), 0) FROM metadata WHERE subject = 'CI test mail';")
+          count=$(echo "${row}" | cut -f1)
+          attachments=$(echo "${row}" | cut -f2)
 
           if [ "${count}" -lt 1 ]; then
             echo "test mail was not archived" >&2
             docker compose logs piler
             exit 1
           fi
-          echo "test mail archived, ${count} row(s) found"
+          if [ "${attachments}" -lt 1 ]; then
+            echo "test mail was archived but its attachment was not recorded" >&2
+            docker compose logs piler
+            exit 1
+          fi
+          echo "test mail archived with ${attachments} attachment(s), ${count} row(s) found"
+
+      - name: Search for the archived mail through the web UI
+        run: |
+          for i in $(seq 1 10); do
+            results=$(curl -sS -b /tmp/admin-cookie.txt \
+              --data-urlencode "searchtype=simple" \
+              --data-urlencode "subject=CI test mail" \
+              --data-urlencode "page=0" \
+              --data-urlencode "sort=1" \
+              --data-urlencode "order=date" \
+              http://localhost/search-helper.php)
+
+            if echo "${results}" | grep -q "CI test mail"; then
+              echo "full-text search found the archived mail after ${i} tries"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "full-text search did not find the archived mail" >&2
+          exit 1
+
+      - name: Restart the stack and check the archived mail survives
+        run: |
+          docker compose restart mysql piler
+          sleep 5
+
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || true)
+            if [ "${code}" = "200" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          count=$(docker compose exec -T mysql \
+            mariadb -upiler -ppiler123 piler -N -e \
+            "SELECT COUNT(*) FROM metadata WHERE subject = 'CI test mail';")
+
+          if [ "${count}" -lt 1 ]; then
+            echo "archived mail did not survive a stack restart" >&2
+            docker compose logs
+            exit 1
+          fi
+          echo "archived mail survived the restart, ${count} row(s) found"
 
       - name: Show logs on failure
         if: failure()
