@@ -90,7 +90,7 @@ RUN sed -i -E \
       /etc/php/*/fpm/php-fpm.conf && \
     find /etc/php -name 'www.conf' -exec \
       sed -i -E \
-        -e 's/^(user|group)\s*=.*/\1 = piler/' \
+        -e '/^(user|group)\s*=/d' \
         -e 's%^listen\s*=.*%listen = /var/piler/run/php-fpm.sock%' \
         -e 's/^listen\.owner\s*=.*/listen.owner = piler/' \
         -e 's/^listen\.group\s*=.*/listen.group = piler/' \
