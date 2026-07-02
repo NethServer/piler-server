@@ -13,10 +13,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 usage() {
     cat <<EOF
-Usage: ./release-tag.sh --tag [--push]
+Usage: ./release-tag.sh --show|--tag [--push]
 
-  --tag    create the release git tag on HEAD, computed from the
-           Dockerfile ARGs (v<PILER_VERSION>-<BASE_IMAGE_TAG>)
+  --show   print the release tag computed from the Dockerfile ARGs
+           (v<PILER_VERSION>-<BASE_IMAGE_TAG>) and exit
+  --tag    create that tag on HEAD
   --push   also push the tag, which triggers release.yml
 
 Called without arguments, this help is shown.
@@ -28,10 +29,12 @@ if [[ $# -eq 0 ]]; then
     exit 0
 fi
 
+do_show=0
 do_tag=0
 do_push=0
 for arg in "$@"; do
     case "${arg}" in
+        --show) do_show=1 ;;
         --tag) do_tag=1 ;;
         --push) do_push=1 ;;
         -h|--help) usage; exit 0 ;;
@@ -43,15 +46,20 @@ for arg in "$@"; do
     esac
 done
 
+source ./dockerfile-vars.sh
+
+tag="v${piler_version}-${base_image_tag}"
+
+if [[ "${do_show}" -eq 1 ]]; then
+    echo "${tag}"
+    exit 0
+fi
+
 if [[ "${do_tag}" -ne 1 ]]; then
     echo "--tag is required" >&2
     usage
     exit 1
 fi
-
-source ./dockerfile-vars.sh
-
-tag="v${piler_version}-${base_image_tag}"
 
 if git rev-parse "${tag}" >/dev/null 2>&1; then
     echo "Tag '${tag}' already exists" >&2
