@@ -86,24 +86,30 @@ make_piler_key() {
    give_it_to_piler "$f"
 }
 
+write_piler_nginx_conf() {
+   log "Writing ${PILER_NGINX_CONF}"
+
+   cp "${TMP_CONF_DIR}/piler-nginx.conf.dist" "$PILER_NGINX_CONF"
+   safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
+}
+
 fix_configs() {
    [[ -f "$PILER_KEY" ]] || make_piler_key "$PILER_KEY"
    [[ -f "$PILER_PEM" ]] || make_certificate "$PILER_PEM"
 
    [[ -f /etc/piler/MANTICORE ]] || touch /etc/piler/MANTICORE
-   for f in config-site.dist.php manticore.conf manticore.conf.dist piler-nginx.conf.dist piler.conf.dist; do
-      if [[ ! -f "/etc/piler/${f}" ]]; then cp "${TMP_CONF_DIR}/${f}" /etc/piler; fi
-   done
 
-   if [[ ! -f "$PILER_NGINX_CONF" ]]; then
-      log "Writing ${PILER_NGINX_CONF}"
+   # Templates always come from TMP_CONF_DIR, never from the /etc/piler
+   # volume itself, or a stale one would never pick up an image update.
+   [[ -f /etc/piler/manticore.conf ]] || cp "${TMP_CONF_DIR}/manticore.conf" /etc/piler
 
-      cp "${PILER_NGINX_CONF}.dist" "$PILER_NGINX_CONF"
-      safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
+   # Also regenerate if an older template left it without a listen directive.
+   if [[ ! -f "$PILER_NGINX_CONF" ]] || ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
+      write_piler_nginx_conf
    fi
 
    if [[ ! -f "$PILER_CONF" ]]; then
-      cp "${PILER_CONF}.dist" "$PILER_CONF"
+      cp "${TMP_CONF_DIR}/piler.conf.dist" "$PILER_CONF"
    fi
 
    log "Updating ${PILER_CONF}"
@@ -125,7 +131,7 @@ fix_configs() {
    if [[ ! -f "$CONFIG_SITE_PHP" ]]; then
       log "Writing ${CONFIG_SITE_PHP}"
 
-      cp "${CONFIG_DIR}/config-site.dist.php" "$CONFIG_SITE_PHP"
+      cp "${TMP_CONF_DIR}/config-site.dist.php" "$CONFIG_SITE_PHP"
 
       safe_sed "$CONFIG_SITE_PHP" "s%HOSTNAME%${PILER_HOSTNAME}%"
 

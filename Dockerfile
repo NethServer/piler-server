@@ -70,7 +70,6 @@ RUN dpkg -i /tmp/piler.deb && \
     touch /etc/piler/MANTICORE && \
     ln -sf /etc/piler/piler-nginx.conf /etc/nginx/sites-enabled/piler-nginx.conf && \
     rm -f /etc/nginx/sites-enabled/default /etc/piler/piler.key /etc/piler/piler.pem /etc/piler/config-site.php && \
-    cp -R /etc/piler /tmp/piler-conf && \
     mkdir -p /var/piler/run && \
     cp /usr/share/piler/piler.cron /etc/piler.cron
 
@@ -100,7 +99,13 @@ RUN sed -i -E \
     sed -i -E '0,/^server \{/s//server {\n        listen 80 default_server;\n        listen [::]:80 default_server;/' \
       /etc/piler/piler-nginx.conf.dist && \
     ln -sf "$(ls /usr/sbin/php-fpm* | head -n1)" /usr/local/bin/php-fpm && \
-    chown -R piler:piler /etc/piler /var/piler /var/log/nginx /var/lib/nginx
+    chown -R piler:piler /etc/piler /var/piler /var/log/nginx /var/lib/nginx && \
+    # entrypoint.sh reads *.dist templates from this snapshot, never from
+    # /etc/piler itself (a VOLUME, so it'd go stale on an existing one).
+    # Take it after the sed fixes above, or it ships pre-fix config.
+    cp -R /etc/piler /tmp/piler-conf && \
+    # Nothing reads *.dist from the volume anymore - drop them from it.
+    rm -f /etc/piler/*.dist
 
 COPY entrypoint.sh /entrypoint.sh
 COPY config/supervisord.conf /etc/supervisor/supervisord.conf
