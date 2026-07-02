@@ -104,16 +104,11 @@ RUN sed -i -E \
       /etc/piler/piler-nginx.conf.dist && \
     ln -sf "$(ls /usr/sbin/php-fpm* | head -n1)" /usr/local/bin/php-fpm && \
     chown -R piler:piler /etc/piler /var/piler /var/log/nginx /var/lib/nginx && \
-    # entrypoint.sh's fix_configs() always reads *.dist templates from this
-    # snapshot, never from /etc/piler itself - /etc/piler is a VOLUME, so a
-    # template living there would only ever reach a genuinely empty volume
-    # via podman's one-time copy-up, then go stale forever on any volume
-    # that already existed (from an older, buggy image, say). Take the
-    # snapshot after all the sed fixes above, or it ships pre-fix config.
+    # entrypoint.sh reads *.dist templates from this snapshot, never from
+    # /etc/piler itself (a VOLUME, so it'd go stale on an existing one).
+    # Take it after the sed fixes above, or it ships pre-fix config.
     cp -R /etc/piler /tmp/piler-conf && \
-    # The *.dist files have no reason to live in the volume at all now
-    # that fix_configs() never reads them from there - drop them so they
-    # don't confuse anyone poking around inside a running container.
+    # Nothing reads *.dist from the volume anymore - drop them from it.
     rm -f /etc/piler/*.dist
 
 COPY entrypoint.sh /entrypoint.sh

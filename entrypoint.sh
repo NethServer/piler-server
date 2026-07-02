@@ -99,19 +99,11 @@ fix_configs() {
 
    [[ -f /etc/piler/MANTICORE ]] || touch /etc/piler/MANTICORE
 
-   # *.dist templates are only ever read from TMP_CONF_DIR (the image's own
-   # /etc/piler snapshot, taken at build time - see the Dockerfile), never
-   # from the /etc/piler volume itself. /etc/piler is a VOLUME: whatever
-   # dpkg installs there only reaches it via podman's one-time copy-up on a
-   # genuinely empty volume, so a template read from there would go stale
-   # forever on any volume that already existed. Reading from TMP_CONF_DIR
-   # means every restart regenerates from the current image's template.
+   # Templates always come from TMP_CONF_DIR, never from the /etc/piler
+   # volume itself, or a stale one would never pick up an image update.
    [[ -f /etc/piler/manticore.conf ]] || cp "${TMP_CONF_DIR}/manticore.conf" /etc/piler
 
-   # Also rewrite it if a volume provisioned before the "listen 80
-   # default_server;" fix was baked into the template left it without a
-   # listen directive - the ! -f guard alone only fires once, so a broken
-   # file would otherwise never get regenerated.
+   # Also regenerate if an older template left it without a listen directive.
    if [[ ! -f "$PILER_NGINX_CONF" ]] || ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
       write_piler_nginx_conf
    fi
