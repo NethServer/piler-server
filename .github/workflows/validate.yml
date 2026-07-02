@@ -25,6 +25,13 @@ jobs:
           fi
           echo "image=${REPOBASE}/piler-server:${tag}" >> "$GITHUB_OUTPUT"
 
+          {
+            echo "### Image tested"
+            echo '```'
+            echo "${REPOBASE}/piler-server:${tag}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Start the stack
         env:
           PILER_IMAGE: ${{ steps.image.outputs.image }}
