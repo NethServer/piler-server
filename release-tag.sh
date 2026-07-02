@@ -10,6 +10,9 @@ set -o pipefail
 set -o nounset
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
+source ./dockerfile-vars.sh
+
+tag="v${piler_version}-${base_image_tag}"
 
 usage() {
     cat <<EOF
@@ -20,7 +23,7 @@ Usage: ./release-tag.sh --show|--tag [--push]
   --tag    create that tag on HEAD
   --push   also push the tag, which triggers release.yml
 
-Called without arguments, this help is shown.
+Current Dockerfile would release as: ${tag}
 EOF
 }
 
@@ -45,10 +48,6 @@ for arg in "$@"; do
             ;;
     esac
 done
-
-source ./dockerfile-vars.sh
-
-tag="v${piler_version}-${base_image_tag}"
 
 if [[ "${do_show}" -eq 1 ]]; then
     echo "${tag}"
