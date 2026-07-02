@@ -40,7 +40,10 @@ jobs:
         id: build
         env:
           HEAD_REF: ${{ github.head_ref }}
-          SHA: ${{ github.sha }}
+          # For pull_request events, github.sha is the ephemeral merge
+          # commit, not the branch tip - use the real head sha instead so
+          # validate.yml's workflow_run.head_sha lookup finds this tag.
+          SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           image="${REPOBASE}/piler-server"

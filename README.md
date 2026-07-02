@@ -1,19 +1,7 @@
 # piler-docker
 
-Rootless container image for the piler mail archiving server, fixing a
-handful of startup issues found on Ubuntu 26.04 base images:
-
-- `/var/piler/run` missing → pidfile never written → `rc.piler status`
-  always reports "NOT running".
-- MariaDB client on Ubuntu 26.04 requires TLS by default, while the mariadb
-  container has no SSL configured → the startup script loops forever
-  waiting for the database.
-- `sed -i` renames a temp file into place, which fails with "Device or
-  resource busy" when `/etc/piler` is a bind mount.
-- php-fpm's error log and socket paths/ownership are not writable by the
-  non-root `piler` user, causing a crash loop.
-- the nginx site template ships without a `listen` directive, so nginx
-  falls back to port 8000 instead of 80/443.
+Rootless container image for [piler](https://github.com/jsuto/piler), the
+mail archiving server.
 
 ## Why a separate image
 
