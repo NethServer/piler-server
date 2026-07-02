@@ -1,0 +1,55 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check tag matches the Dockerfile version
+        run: |
+          base_image_tag=$(grep -oP '^ARG BASE_IMAGE=ubuntu:\K.*' Dockerfile)
+          piler_version=$(grep -oP '^ARG PILER_VERSION=\K.*' Dockerfile)
+          expected="${piler_version}-${base_image_tag}"
+          wanted="${GITHUB_REF_NAME#v}"
+          if [[ "${wanted}" != "${expected}" ]]; then
+            echo "Tag '${GITHUB_REF_NAME}' does not match the Dockerfile: expected 'v${expected}', got 'v${wanted}'" >&2
+            exit 1
+          fi
+          echo "RELEASE_TAG=${expected}" >> "$GITHUB_ENV"
+          echo "BASE_IMAGE_TAG=${base_image_tag}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release tag
+        run: |
+          REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          image="${REPOBASE}/piler-server"
+          docker buildx build --file Dockerfile \
+            --tag "${image}:${RELEASE_TAG}" \
+            --tag "${image}:${BASE_IMAGE_TAG}" \
+            --tag "${image}:latest" \
+            --push .
+
+          {
+            echo "### Image URLs"
+            echo '```'
+            echo "${image}:${RELEASE_TAG}"
+            echo "${image}:${BASE_IMAGE_TAG}"
+            echo "${image}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

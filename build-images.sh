@@ -2,26 +2,35 @@
 
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Build (and optionally push) the piler-server image.
+# Build (never push) the piler-server image, for local/dev use.
 #
-# This script only adds NethServer image naming and GitHub Actions output
-# contract on top of a plain `podman build`/`buildah build`. All actual
-# version pinning lives in the Dockerfile ARGs, which are read back here
-# so this script and the Dockerfile never drift apart.
+# Pushing is CI's job, not this script's: the GitHub Actions workflows
+# call `docker buildx build --push` directly so a multi-arch manifest can
+# be built and pushed atomically. This script only adds NethServer image
+# naming on top of a plain `podman build`/`buildah build`/`docker buildx
+# build --load`. All actual version pinning lives in the Dockerfile ARGs,
+# which are read back here so this script and the Dockerfile never drift
+# apart.
 #
 # Usage:
-#   ./build-images.sh                 # build locally, tag only
-#   IMAGETAG=1.4.9 PUSH=1 ./build-images.sh   # build, tag and push
+#   ./build-images.sh                            # build locally, tag only
+#   IMAGETAG=1.4.9 ./build-images.sh              # add an extra tag
+#   SKIP_DEFAULT_TAGS=1 IMAGETAG=pr-42 ./build-images.sh   # tag only pr-42
 #
 # Env vars:
 #   REPOBASE  - registry + namespace (default: ghcr.io/nethserver)
 #   IMAGETAG  - extra tag to apply, in addition to the base-image tag and
 #               "latest" (default: unset, i.e. only the two default tags)
-#   PUSH      - if set to 1, push the built image(s) (default: 0)
+#   SKIP_DEFAULT_TAGS - if set to 1, don't tag the base-image tag or
+#               "latest" - only IMAGETAG is used (default: 0). For test
+#               builds that must not touch the stable tags.
 #   ENGINE    - container engine to use: podman, buildah or docker
 #               (default: auto-detect, preferring podman)
-#   PLATFORMS - comma separated platform list, only used with ENGINE=docker
-#               (default: linux/amd64,linux/arm64)
+#   PLATFORMS - comma separated platform list, only used with ENGINE=docker.
+#               Since this script always loads the result locally (never
+#               pushes), only a single platform is supported here - build
+#               a multi-arch manifest via CI instead.
+#               (default: host platform)
 
 set -o errexit
 set -o pipefail
@@ -31,8 +40,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 reponame="piler-server"
 repobase="${REPOBASE:-ghcr.io/nethserver}"
-push="${PUSH:-0}"
-platforms="${PLATFORMS:-linux/amd64,linux/arm64}"
+platforms="${PLATFORMS:-}"
 
 # Read defaults straight from the Dockerfile so this script cannot drift
 # from the image it builds.
@@ -41,9 +49,17 @@ piler_version=$(grep -oP '^ARG PILER_VERSION=\K.*' Dockerfile)
 
 image="${repobase}/${reponame}"
 
-tags=("${image}:${base_image_tag}" "${image}:latest")
+tags=()
+if [[ "${SKIP_DEFAULT_TAGS:-0}" != "1" ]]; then
+    tags+=("${image}:${base_image_tag}" "${image}:latest")
+fi
 if [[ -n "${IMAGETAG:-}" ]]; then
     tags+=("${image}:${IMAGETAG}")
+fi
+
+if [[ "${#tags[@]}" -eq 0 ]]; then
+    echo "No tags to build: SKIP_DEFAULT_TAGS=1 was set but IMAGETAG is empty" >&2
+    exit 1
 fi
 
 echo "Building ${image} (piler ${piler_version}, base ubuntu:${base_image_tag})"
@@ -71,11 +87,13 @@ done
 
 case "${engine}" in
     docker)
-        build_args=(buildx build --file Dockerfile "${tag_args[@]}" --platform "${platforms}")
-        if [[ "${push}" == "1" ]]; then
-            build_args+=(--push)
-        else
-            build_args+=(--load)
+        if [[ "${platforms}" == *,* ]]; then
+            echo "ENGINE=docker only supports a single platform here (got '${platforms}') - this script always --load, never --push, and buildx cannot load a multi-arch manifest. Build a multi-arch image via CI instead." >&2
+            exit 1
+        fi
+        build_args=(buildx build --file Dockerfile "${tag_args[@]}" --load)
+        if [[ -n "${platforms}" ]]; then
+            build_args+=(--platform "${platforms}")
         fi
         docker "${build_args[@]}" .
         ;;
@@ -83,19 +101,9 @@ case "${engine}" in
         # podman build does one platform at a time; build for the host arch
         # only, which is enough for local testing.
         podman build --file Dockerfile "${tag_args[@]}" .
-        if [[ "${push}" == "1" ]]; then
-            for t in "${tags[@]}"; do
-                podman push "${t}"
-            done
-        fi
         ;;
     buildah)
         buildah build --file Dockerfile "${tag_args[@]}" .
-        if [[ "${push}" == "1" ]]; then
-            for t in "${tags[@]}"; do
-                buildah push "${t}" "docker://${t}"
-            done
-        fi
         ;;
     *)
         echo "Unknown ENGINE '${engine}' (expected docker, podman or buildah)" >&2
