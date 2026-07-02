@@ -4,20 +4,26 @@ on:
   workflow_run:
     workflows: [build]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to validate (a commit sha or 'latest')"
+        required: false
+        default: latest
 
 jobs:
   validate:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Compute image reference
         id: image
         env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_tag }}
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           echo "image=${REPOBASE}/piler-server:${SHA}" >> "$GITHUB_OUTPUT"
