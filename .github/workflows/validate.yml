@@ -23,15 +23,29 @@ jobs:
       - name: Compute image reference
         id: image
         env:
-          SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_tag }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_TAG: ${{ inputs.image_tag }}
         run: |
           REPOBASE="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "image=${REPOBASE}/piler-server:${SHA}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${HEAD_BRANCH}" = "${{ github.event.repository.default_branch }}" ]; then
+              tag="latest"
+            else
+              tag=$(echo "${HEAD_BRANCH}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+|-+$//g')
+            fi
+            image_tag="${tag}-${SHA:0:7}"
+          else
+            image_tag="${MANUAL_TAG}"
+          fi
+
+          echo "image=${REPOBASE}/piler-server:${image_tag}" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Image tested"
             echo '```'
-            echo "${REPOBASE}/piler-server:${SHA}"
+            echo "${REPOBASE}/piler-server:${image_tag}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

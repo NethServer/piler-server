@@ -54,21 +54,24 @@ jobs:
             tag="latest"
           fi
 
-          # Push a human-readable tag (branch name or "latest") plus an
-          # immutable sha tag - validate.yml pins to the sha tag so it
+          short_sha="${SHA:0:7}"
+          sha_tag="${tag}-${short_sha}"
+
+          # Push a human-readable tag (branch name or "latest") plus a
+          # branch+short-sha tag - validate.yml pins to the sha tag so it
           # always tests the exact commit it checked out, even if the
           # human-readable tag gets overwritten by a later push.
           docker buildx build --file Dockerfile \
             --tag "${image}:${tag}" \
-            --tag "${image}:${SHA}" \
+            --tag "${image}:${sha_tag}" \
             --push .
-          echo "image=${image}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}:${sha_tag}" >> "$GITHUB_OUTPUT"
 
           {
             echo "### Image URLs"
             echo '```'
             echo "${image}:${tag}"
-            echo "${image}:${SHA}"
+            echo "${image}:${sha_tag}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
     outputs:
