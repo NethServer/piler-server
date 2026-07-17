@@ -2,18 +2,24 @@
 
 ARG BASE_IMAGE=ubuntu:resolute-20260610
 ARG PILER_VERSION=1.4.9
+# sha256 of each release asset, taken from GitHub's published per-asset digest
+# (shown on the release page). Update alongside the version on a bump.
+ARG PILER_SHA256_AMD64=e6f9e5e7bf307f024ea248352b93d5cad0925f0f998b2902e0e64ce0db51859a
+ARG PILER_SHA256_ARM64=af324754a748ec31aa83204ff20404cf7866fc0de71fc30ae796b1c9e51e42ab
 ARG SUPERCRONIC_VERSION=v0.2.46
-ARG SUPERCRONIC_SHA1SUM_AMD64=5bcefed628e32adc08e32634db2d10e9230dbca0
-ARG SUPERCRONIC_SHA1SUM_ARM64=639ab81a72771990790df7ee87d9acfe88e5fa83
+ARG SUPERCRONIC_SHA256_AMD64=5adff01c5a797663948e656d2b61d10932369ee437eb5cb54fa872b2960f222b
+ARG SUPERCRONIC_SHA256_ARM64=c0576a8eb092e3f79108ed0a2155a25c7766af78456e5a6070e54757ef513bfe
 
 # --- stage: fetcher ---------------------------------------------------------
 FROM ${BASE_IMAGE} AS fetcher
 
 ARG PILER_VERSION
 ARG TARGETARCH
+ARG PILER_SHA256_AMD64
+ARG PILER_SHA256_ARM64
 ARG SUPERCRONIC_VERSION
-ARG SUPERCRONIC_SHA1SUM_AMD64
-ARG SUPERCRONIC_SHA1SUM_ARM64
+ARG SUPERCRONIC_SHA256_AMD64
+ARG SUPERCRONIC_SHA256_ARM64
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl && \
@@ -28,12 +34,14 @@ WORKDIR /fetch
 RUN url=$(curl -fsSL "https://api.github.com/repos/jsuto/piler/releases/tags/piler-${PILER_VERSION}" \
              | grep -o "https://github.com/jsuto/piler/releases/download/[^\"]*_${TARGETARCH}\.deb" \
              | head -n1) && \
-    curl -fsSLo piler.deb "$url"
+    curl -fsSLo piler.deb "$url" && \
+    if [ "${TARGETARCH}" = "arm64" ]; then sum="${PILER_SHA256_ARM64}"; else sum="${PILER_SHA256_AMD64}"; fi && \
+    echo "${sum}  piler.deb" | sha256sum -c -
 
 RUN curl -fsSLo supercronic \
       "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then sum="${SUPERCRONIC_SHA1SUM_ARM64}"; else sum="${SUPERCRONIC_SHA1SUM_AMD64}"; fi && \
-    echo "${sum}  supercronic" | sha1sum -c - && \
+    if [ "${TARGETARCH}" = "arm64" ]; then sum="${SUPERCRONIC_SHA256_ARM64}"; else sum="${SUPERCRONIC_SHA256_AMD64}"; fi && \
+    echo "${sum}  supercronic" | sha256sum -c - && \
     chmod +x supercronic
 
 # --- stage: runtime ----------------------------------------------------------
