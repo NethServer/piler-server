@@ -1,1 +1,5 @@
 .claude/
+.env
+*.pem
+*.key
+*.crt

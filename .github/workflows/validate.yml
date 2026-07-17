@@ -15,9 +15,16 @@ jobs:
   validate:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v6
         with:
+          # This ref is untrusted (the branch/PR that triggered the build);
+          # don't leave the GITHUB_TOKEN in .git/config where the compose
+          # stack we run from that ref could read it.
+          persist-credentials: false
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Compute image reference
@@ -219,6 +226,32 @@ jobs:
             exit 1
           fi
           echo "archived mail survived the restart, ${count} row(s) found"
+
+      # Destructive: leaves piler down, so keep it last before teardown.
+      - name: exit-on-fatal brings the container down on a FATAL service
+        run: |
+          before=$(docker inspect -f '{{.State.Status}}' piler)
+          echo "piler state before: ${before}"
+
+          # Break nginx so supervisord's restart of it fails, then kill the
+          # running master. The failed respawns exhaust startretries, nginx
+          # goes FATAL, and the exit-on-fatal listener kills pid 1 so the
+          # whole container goes down (piler has no restart policy here).
+          docker compose exec -u root -T piler sh -c 'mv /usr/sbin/nginx /usr/sbin/nginx.broken'
+          docker compose exec -u root -T piler sh -c 'kill "$(pgrep -o -x nginx)"'
+
+          for i in $(seq 1 45); do
+            state=$(docker inspect -f '{{.State.Status}}' piler 2>/dev/null || echo gone)
+            if [ "${state}" != "running" ]; then
+              echo "piler left the running state (${state}) after a FATAL service - exit-on-fatal fired"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "piler stayed running despite a FATAL service - exit-on-fatal did not fire" >&2
+          docker compose logs piler >&2 || true
+          exit 1
 
       - name: Show logs on failure
         if: failure()

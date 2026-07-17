@@ -19,10 +19,10 @@
 #
 # Env vars:
 #   REPOBASE  - registry + namespace (default: ghcr.io/nethserver)
-#   IMAGETAG  - extra tag to apply, in addition to the base-image tag and
-#               "latest" (default: unset, i.e. only the two default tags)
-#   SKIP_DEFAULT_TAGS - if set to 1, don't tag the base-image tag or
-#               "latest" - only IMAGETAG is used (default: 0). For test
+#   IMAGETAG  - extra tag to apply, in addition to the default tags
+#               (version-base, base-image, and "latest"; default: unset)
+#   SKIP_DEFAULT_TAGS - if set to 1, don't apply the default tags -
+#               only IMAGETAG is used (default: 0). For test
 #               builds that must not touch the stable tags.
 #   ENGINE    - container engine to use: podman, buildah or docker
 #               (default: auto-detect, preferring podman)
@@ -44,13 +44,18 @@ platforms="${PLATFORMS:-}"
 
 # Read defaults straight from the Dockerfile so this script cannot drift
 # from the image it builds.
-source ./dockerfile-vars.sh
+source ./dockerfile-vars.sh || true
+
+if [[ -z "${piler_version:-}" || -z "${base_image_tag:-}" ]]; then
+    echo "Could not read PILER_VERSION / BASE_IMAGE from Dockerfile" >&2
+    exit 1
+fi
 
 image="${repobase}/${reponame}"
 
 tags=()
 if [[ "${SKIP_DEFAULT_TAGS:-0}" != "1" ]]; then
-    tags+=("${image}:${base_image_tag}" "${image}:latest")
+    tags+=("${image}:${piler_version}-${base_image_tag}" "${image}:${base_image_tag}" "${image}:latest")
 fi
 if [[ -n "${IMAGETAG:-}" ]]; then
     tags+=("${image}:${IMAGETAG}")
