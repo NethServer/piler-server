@@ -28,9 +28,22 @@ def main() -> None:
         write_stdout("READY\n")
 
         line = sys.stdin.readline()
-        headers = dict(field.split(":") for field in line.split())
-        length = int(headers["len"])
-        payload = sys.stdin.read(length)
+        if not line:
+            # stdin closed (supervisord is shutting down): exit cleanly
+            # instead of falling through to a KeyError on an empty header.
+            return
+
+        try:
+            headers = dict(field.split(":", 1) for field in line.split())
+            length = int(headers["len"])
+            payload = sys.stdin.read(length)
+        except (ValueError, KeyError) as exc:
+            # A malformed header must not crash the listener - that would
+            # silently disable the FATAL watchdog. Ack and skip the event.
+            sys.stderr.write(f"exit-on-fatal: ignoring malformed event: {exc}\n")
+            sys.stderr.flush()
+            write_stdout("RESULT 4\nFAIL")
+            continue
 
         write_stdout("RESULT 2\nOK")
 
