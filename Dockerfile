@@ -72,7 +72,7 @@ RUN dpkg -i /tmp/piler.deb && \
     ln -sf /etc/piler/piler-nginx.conf /etc/nginx/sites-enabled/piler-nginx.conf && \
     rm -f /etc/nginx/sites-enabled/default /etc/piler/piler.key /etc/piler/piler.pem /etc/piler/config-site.php && \
     mkdir -p /var/piler/run && \
-    cp /usr/share/piler/piler.cron /etc/piler.cron
+    grep -v 'indexer' /usr/share/piler/piler.cron > /etc/piler.cron
 
 # nginx and php-fpm must run as the same unprivileged user as everything
 # else - there is no root left to drop privileges from. Their default

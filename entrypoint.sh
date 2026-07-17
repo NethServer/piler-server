@@ -20,7 +20,7 @@ PILER_NGINX_CONF="${CONFIG_DIR}/piler-nginx.conf"
 SPHINX_CONF="${CONFIG_DIR}/manticore.conf"
 CONFIG_SITE_PHP="${CONFIG_DIR}/config-site.php"
 PILER_MY_CNF="${CONFIG_DIR}/.my.cnf"
-RT="${RT:-0}"
+RT="${RT:-1}"
 MEMCACHED_HOSTNAME="${MEMCACHED_HOSTNAME:-memcached}"
 MANTICORE_HOSTNAME="${MANTICORE_HOSTNAME:-manticore}"
 TMP_CONF_DIR="/tmp/piler-conf"
@@ -66,7 +66,10 @@ pre_flight_check() {
    [[ -v MYSQL_DATABASE ]] || error "Missing MYSQL_DATABASE env variable"
    [[ -v MYSQL_USER ]]     || error "Missing MYSQL_USER env variable"
    [[ -v MYSQL_PASSWORD ]] || error "Missing MYSQL_PASSWORD env variable"
-   [[ "$RT" =~ ^[01]$ ]]   || error "RT must be 0 or 1, got '${RT}'"
+   # This image only supports real-time indexing (RT=1): manticore runs in a
+   # separate container and no local `indexer` binary is installed, so batch
+   # indexing (RT=0) cannot build or rotate indexes here.
+   [[ "$RT" == "1" ]] || error "RT must be 1 (real-time mode). This image runs piler against an external manticore container with no local indexer binary, so batch indexing (RT=0) is unsupported."
 }
 
 give_it_to_piler() {
