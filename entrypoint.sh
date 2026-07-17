@@ -66,6 +66,7 @@ pre_flight_check() {
    [[ -v MYSQL_DATABASE ]] || error "Missing MYSQL_DATABASE env variable"
    [[ -v MYSQL_USER ]]     || error "Missing MYSQL_USER env variable"
    [[ -v MYSQL_PASSWORD ]] || error "Missing MYSQL_PASSWORD env variable"
+   [[ "$RT" =~ ^[01]$ ]]   || error "RT must be 0 or 1, got '${RT}'"
 }
 
 give_it_to_piler() {
@@ -179,20 +180,20 @@ fix_configs() {
 
    if [[ $RT -eq 1 ]]; then
       safe_sed "$SPHINX_CONF" "s/define('RT', 0)/define('RT', 1)/"
-      if ! grep "'RT'" "$CONFIG_SITE_PHP"; then
+      if ! grep -q "'RT'" "$CONFIG_SITE_PHP"; then
          echo "\$config['RT'] = 1;" >> "$CONFIG_SITE_PHP"
       fi
 
-      if ! grep "'SPHINX_MAIN_INDEX'" "$CONFIG_SITE_PHP"; then
+      if ! grep -q "'SPHINX_MAIN_INDEX'" "$CONFIG_SITE_PHP"; then
          echo "\$config['SPHINX_MAIN_INDEX'] = 'piler1';" >> "$CONFIG_SITE_PHP"
       fi
    fi
 
-   if ! grep "'SPHINX_HOSTNAME'" "$CONFIG_SITE_PHP"; then
+   if ! grep -q "'SPHINX_HOSTNAME'" "$CONFIG_SITE_PHP"; then
       echo "\$config['SPHINX_HOSTNAME'] = '${MANTICORE_HOSTNAME}:9306';" >> "$CONFIG_SITE_PHP"
    fi
 
-   if ! grep "'SPHINX_HOSTNAME_READONLY'" "$CONFIG_SITE_PHP"; then
+   if ! grep -q "'SPHINX_HOSTNAME_READONLY'" "$CONFIG_SITE_PHP"; then
       echo "\$config['SPHINX_HOSTNAME_READONLY'] = '${MANTICORE_HOSTNAME}:9307';" >> "$CONFIG_SITE_PHP"
    fi
 
@@ -210,7 +211,17 @@ fix_configs() {
 }
 
 wait_until_mysql_server_is_ready() {
-   while true; do if mysql "--defaults-file=${PILER_MY_CNF}" <<< "show databases"; then break; fi; log "${MYSQL_HOSTNAME} is not ready"; sleep 5; done
+   local attempts=0
+   local max_attempts="${MYSQL_WAIT_MAX_ATTEMPTS:-60}"
+
+   until mysql "--defaults-file=${PILER_MY_CNF}" <<< "show databases" >/dev/null 2>&1; do
+      attempts=$((attempts + 1))
+      if [[ "$attempts" -ge "$max_attempts" ]]; then
+         error "${MYSQL_HOSTNAME} not ready after ${max_attempts} attempts, giving up"
+      fi
+      log "${MYSQL_HOSTNAME} is not ready (${attempts}/${max_attempts})"
+      sleep 5
+   done
 
    log "${MYSQL_HOSTNAME} is ready"
 }
