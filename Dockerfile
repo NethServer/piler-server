@@ -39,8 +39,17 @@ RUN curl -fsSLo supercronic \
 # --- stage: runtime ----------------------------------------------------------
 FROM ${BASE_IMAGE} AS runtime
 
-LABEL description="piler mail archiving server, rootless image" \
-      maintainer="Stephane de Labrusse"
+# Re-declare in this stage so it can be used in the version label below;
+# otherwise the base image's own image.version (Ubuntu's) leaks through.
+ARG PILER_VERSION
+
+LABEL org.opencontainers.image.source="https://github.com/NethServer/piler-server" \
+      org.opencontainers.image.authors="Stephane de Labrusse <stephdl@de-labrusse.fr>" \
+      org.opencontainers.image.title="piler mail archiving server" \
+      org.opencontainers.image.description="Rootless piler (email archiver) image: nginx, php-fpm and supervisord, running against external mariadb, manticore and memcached containers" \
+      org.opencontainers.image.version="${PILER_VERSION}" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later" \
+      org.opencontainers.image.vendor="NethServer"
 
 ENV DEBIAN_FRONTEND="noninteractive" \
     PILER_USER="piler" \

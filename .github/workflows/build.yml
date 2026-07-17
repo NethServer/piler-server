@@ -79,6 +79,8 @@ jobs:
           # always tests the exact commit it checked out, even if the
           # human-readable tag gets overwritten by a later push.
           docker buildx build --file Dockerfile \
+            --label "org.opencontainers.image.revision=${SHA}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --tag "${image}:${tag}" \
             --tag "${image}:${sha_tag}" \
             --push .
