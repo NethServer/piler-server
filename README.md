@@ -43,7 +43,7 @@ That constraint shapes the Dockerfile:
 Everything is supervised by `supervisord` (`config/supervisord.conf`), which
 starts `nginx`, `php-fpm`, a `piler-watchdog` program (restarts `rc.piler` if
 its pidfile process dies), `supercronic` (runs `/etc/piler.cron`), and a
-`fatal-exit` listener that kills supervisord if any program crash-loops past
+`exit-on-fatal` listener that kills supervisord if any program crash-loops past
 its retry limit.
 
 ### Piler's own config files
@@ -64,7 +64,7 @@ this image. `entrypoint.sh` only fills in environment-specific values:
 - `entrypoint.sh` — generates the config files above, waits for MySQL,
   creates the schema, starts `rc.piler`, hands off to supervisord.
 - `config/supervisord.conf` — what supervisord starts and how logs stream.
-- `config/fatal-exit-listener.py` — the `fatal-exit` listener above.
+- `config/exit-on-fatal-listener.py` — the `exit-on-fatal` listener above.
 - `build-images.sh` — local build/tag helper, also used by CI.
 - `dockerfile-vars.sh` — reads `PILER_VERSION`/`BASE_IMAGE` back out of the
   Dockerfile, shared by `build-images.sh` and `release-tag.sh`.
