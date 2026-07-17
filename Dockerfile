@@ -113,10 +113,10 @@ RUN sed -i -E \
 
 COPY entrypoint.sh /entrypoint.sh
 COPY config/supervisord.conf /etc/supervisor/supervisord.conf
-COPY config/fatal-exit-listener.py /etc/supervisor/fatal-exit-listener.py
+COPY config/exit-on-fatal-listener.py /etc/supervisor/exit-on-fatal-listener.py
 RUN chmod +x /entrypoint.sh && \
     chown -R piler:piler /tmp/piler-conf && \
-    chown piler:piler /entrypoint.sh /etc/supervisor/supervisord.conf /etc/supervisor/fatal-exit-listener.py
+    chown piler:piler /entrypoint.sh /etc/supervisor/supervisord.conf /etc/supervisor/exit-on-fatal-listener.py
 
 VOLUME ["/etc/piler", "/var/piler/store"]
 
