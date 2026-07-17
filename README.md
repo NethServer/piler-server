@@ -86,9 +86,10 @@ docker compose up
 
 The Dockerfile has two stages:
 
-- `fetcher` — installs `curl`/`ca-certificates`. Resolves piler's `.deb`
-  asset from the GitHub release matching `PILER_VERSION`, downloads it, and
-  downloads/verifies the `supercronic` binary against its SHA1 checksum.
+- `fetcher` — installs `curl`/`ca-certificates`. Resolves piler's amd64 `.deb`
+  asset from the GitHub release matching `PILER_VERSION` and the `supercronic`
+  amd64 binary, and verifies both against their pinned `sha256` (`PILER_SHA256`
+  / `SUPERCRONIC_SHA256`). The image is amd64-only.
 - `runtime` — the actual image. It only `COPY --from=fetcher`s the two
   resulting artifacts. The fetch tooling never reaches the final image.
 
@@ -252,8 +253,11 @@ Three workflows, all under `.github/workflows/`:
 - `PILER_VERSION`: tracked via a `customManagers` regex entry against
   upstream piler GitHub releases.
 - `SUPERCRONIC_VERSION`: same mechanism against `aptible/supercronic`
-  releases. `SUPERCRONIC_SHA1SUM_AMD64`/`_ARM64` must be updated by hand
-  from the release's published checksums when that PR lands.
+  releases.
+- Checksums (`PILER_SHA256`, `SUPERCRONIC_SHA256`) are **not** managed by
+  Renovate. When a version-bump PR lands, the build fails on the sha256 check
+  until the new digest is pasted in by hand — copy it from the asset's sha256
+  on the release page (URLs are in the Dockerfile comments next to each ARG).
 
 ## Piler daemon supervision
 
