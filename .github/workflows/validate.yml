@@ -233,12 +233,15 @@ jobs:
           before=$(docker inspect -f '{{.State.Status}}' piler)
           echo "piler state before: ${before}"
 
-          # Break nginx so supervisord's restart of it fails, then kill the
-          # running master. The failed respawns exhaust startretries, nginx
-          # goes FATAL, and the exit-on-fatal listener kills pid 1 so the
+          # Break nginx's config so supervisord's restart of it fails, then
+          # kill the running master. The failed respawns exhaust startretries,
+          # nginx goes FATAL, and the exit-on-fatal listener kills pid 1 so the
           # whole container goes down (piler has no restart policy here).
-          docker compose exec -u root -T piler sh -c 'mv /usr/sbin/nginx /usr/sbin/nginx.broken'
-          docker compose exec -u root -T piler sh -c 'kill "$(pgrep -o -x nginx)"'
+          # Run as piler, not root: the container drops CAP_KILL (cap_drop:
+          # ALL), so only the process owner can signal nginx - and piler owns
+          # both the nginx master and its config file.
+          docker compose exec -T piler sh -c 'echo "invalid_directive_forced_by_ci;" >> /etc/piler/piler-nginx.conf'
+          docker compose exec -T piler sh -c 'kill "$(pgrep -o -x nginx)"'
 
           for i in $(seq 1 45); do
             state=$(docker inspect -f '{{.State.Status}}' piler 2>/dev/null || echo gone)
