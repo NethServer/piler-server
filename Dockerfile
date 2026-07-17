@@ -2,18 +2,23 @@
 
 ARG BASE_IMAGE=ubuntu:resolute-20260610
 ARG PILER_VERSION=1.4.9
+# amd64-only image. sha256 of the amd64 .deb - on a version bump, copy the new
+# asset digest from the release page (each asset shows a sha256):
+#   https://github.com/jsuto/piler/releases  (open the piler-<version> tag)
+ARG PILER_SHA256=e6f9e5e7bf307f024ea248352b93d5cad0925f0f998b2902e0e64ce0db51859a
 ARG SUPERCRONIC_VERSION=v0.2.46
-ARG SUPERCRONIC_SHA1SUM_AMD64=5bcefed628e32adc08e32634db2d10e9230dbca0
-ARG SUPERCRONIC_SHA1SUM_ARM64=639ab81a72771990790df7ee87d9acfe88e5fa83
+# sha256 of the amd64 binary, from the release page:
+#   https://github.com/aptible/supercronic/releases  (open the <version> tag)
+ARG SUPERCRONIC_SHA256=5adff01c5a797663948e656d2b61d10932369ee437eb5cb54fa872b2960f222b
 
 # --- stage: fetcher ---------------------------------------------------------
 FROM ${BASE_IMAGE} AS fetcher
 
 ARG PILER_VERSION
 ARG TARGETARCH
+ARG PILER_SHA256
 ARG SUPERCRONIC_VERSION
-ARG SUPERCRONIC_SHA1SUM_AMD64
-ARG SUPERCRONIC_SHA1SUM_ARM64
+ARG SUPERCRONIC_SHA256
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl && \
@@ -21,19 +26,23 @@ RUN apt-get update && \
 
 WORKDIR /fetch
 
+# This image is built for amd64 only; fail fast on any other target arch
+# rather than fetching amd64 artifacts into a mislabelled image.
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || { echo "unsupported TARGETARCH=${TARGETARCH}, only amd64 is built" >&2; exit 1; }
+
 # The .deb filename embeds a build commit hash we don't track
 # ("piler_1.4.9-resolute-d3f4b07_amd64.deb") - resolve it from the
 # GitHub release's asset list instead of hardcoding it, so Renovate only
 # has to bump PILER_VERSION.
 RUN url=$(curl -fsSL "https://api.github.com/repos/jsuto/piler/releases/tags/piler-${PILER_VERSION}" \
-             | grep -o "https://github.com/jsuto/piler/releases/download/[^\"]*_${TARGETARCH}\.deb" \
+             | grep -o "https://github.com/jsuto/piler/releases/download/[^\"]*_amd64\.deb" \
              | head -n1) && \
-    curl -fsSLo piler.deb "$url"
+    curl -fsSLo piler.deb "$url" && \
+    echo "${PILER_SHA256}  piler.deb" | sha256sum -c -
 
 RUN curl -fsSLo supercronic \
-      "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${TARGETARCH}" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then sum="${SUPERCRONIC_SHA1SUM_ARM64}"; else sum="${SUPERCRONIC_SHA1SUM_AMD64}"; fi && \
-    echo "${sum}  supercronic" | sha1sum -c - && \
+      "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64" && \
+    echo "${SUPERCRONIC_SHA256}  supercronic" | sha256sum -c - && \
     chmod +x supercronic
 
 # --- stage: runtime ----------------------------------------------------------
