@@ -26,7 +26,8 @@ WORKDIR /fetch
 # GitHub release's asset list instead of hardcoding it, so Renovate only
 # has to bump PILER_VERSION.
 RUN url=$(curl -fsSL "https://api.github.com/repos/jsuto/piler/releases/tags/piler-${PILER_VERSION}" \
-             | grep -o "https://github.com/jsuto/piler/releases/download/[^\"]*_${TARGETARCH}\.deb") && \
+             | grep -o "https://github.com/jsuto/piler/releases/download/[^\"]*_${TARGETARCH}\.deb" \
+             | head -n1) && \
     curl -fsSLo piler.deb "$url"
 
 RUN curl -fsSLo supercronic \
@@ -46,7 +47,7 @@ ENV DEBIAN_FRONTEND="noninteractive" \
     MYSQL_DATABASE="piler"
 
 # hadolint ignore=DL3008
-RUN userdel -r ubuntu 2>/dev/null; \
+RUN if id ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
        openssl sysstat bsdextrautils catdoc unrtf poppler-utils tnef libtre5 ca-certificates \
@@ -121,6 +122,10 @@ RUN chmod +x /entrypoint.sh && \
 VOLUME ["/etc/piler", "/var/piler/store"]
 
 EXPOSE 25 80 443
+
+# Liveness: nginx serving the web UI means supervisord and php-fpm are up.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://localhost/ >/dev/null || exit 1
 
 USER piler
 
