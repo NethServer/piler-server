@@ -15,7 +15,7 @@ mail archiving server.
 - [Debugging](#debugging)
 - [CI](#ci)
 - [Renovate](#renovate)
-- [Known gap to validate](#known-gap-to-validate)
+- [Piler daemon supervision](#piler-daemon-supervision)
 
 ## Why a separate image
 
@@ -41,10 +41,11 @@ That constraint shapes the Dockerfile:
   uid/gid to `1000` so volumes keep stable ownership across rebuilds.
 
 Everything is supervised by `supervisord` (`config/supervisord.conf`), which
-starts `nginx`, `php-fpm`, a `piler-watchdog` program (restarts `rc.piler` if
-its pidfile process dies), `supercronic` (runs `/etc/piler.cron`), and a
-`exit-on-fatal` listener that kills supervisord if any program crash-loops past
-its retry limit.
+starts `nginx`, `php-fpm`, a `piler-watchdog` program (restarts the piler
+daemon if its pidfile process dies, and — if it stays down after a few
+attempts — terminates supervisord so the container is restarted clean),
+`supercronic` (runs `/etc/piler.cron`), and an `exit-on-fatal` listener that
+kills supervisord if any supervised program crash-loops past its retry limit.
 
 ### Piler's own config files
 
@@ -211,26 +212,33 @@ Useful checks on a stuck or crash-looping container:
   permission on the target file itself, not just its directory. A config
   file left root-owned by an older, root-run image will fail with
   `Permission denied` after upgrading to this rootless image.
-- Two warnings are expected and harmless: nginx/php-fpm logging that their
-  `user`/`group` directives are ignored (informational; already fixed in
-  this image — if you still see it, check your image version). Supercronic
-  logging `process reaping disabled, not pid 1` is expected: supervisord is
-  pid 1 here and already reaps children.
+- A few log lines are expected and harmless: nginx/php-fpm noting their
+  `user`/`group` directives are ignored (informational); supercronic logging
+  `process reaping disabled, not pid 1` (supervisord is pid 1 here and already
+  reaps children); and supervisord's `CRIT Server 'unix_http_server' running
+  without any HTTP authentication checking` — that control socket is a
+  filesystem socket restricted to the piler user (`chmod 0700`), not a network
+  listener.
 
 ## CI
 
 Three workflows, all under `.github/workflows/`:
 
 - `build.yml` — builds and pushes the image on every push to `main` and on
-  pull requests. Tags `latest` + `<base_image_tag>` on `main`, a
-  branch-name tag plus an immutable sha tag on pull requests.
+  pull requests from internal branches. Fork PRs are skipped, so untrusted
+  code never runs in CI. Tags `latest` only on the default branch, otherwise a
+  sanitized branch-name tag; every build also gets an immutable sha tag. A
+  `concurrency` group cancels an in-flight older build when a newer commit
+  lands on the same ref.
 - `validate.yml` — triggered by `build.yml` completing (`workflow_run`), or
   manually (`workflow_dispatch`, useful to test a fix before merging since
   `workflow_run` always loads the workflow file from `main`). Starts the
   full `docker-compose.yml` stack, waits for the healthcheck, logs in as
   admin and auditor, sends a real test email over SMTP, checks it's
-  archived and full-text searchable, then restarts `mysql`/`piler` and
-  checks the archived mail survives.
+  archived and full-text searchable, restarts `mysql`/`piler` and checks the
+  archived mail survives, and finally forces a service into `FATAL` to verify
+  `exit-on-fatal` brings the container down. It checks out the triggering ref
+  with `persist-credentials: false` and least-privilege permissions.
 - `release.yml` — triggered by pushing a `v*` git tag (see
   [Release](#release) above). Verifies the tag matches the Dockerfile's
   `PILER_VERSION`/`BASE_IMAGE`, then builds and pushes it alongside
@@ -246,9 +254,12 @@ Three workflows, all under `.github/workflows/`:
   releases. `SUPERCRONIC_SHA1SUM_AMD64`/`_ARM64` must be updated by hand
   from the release's published checksums when that PR lands.
 
-## Known gap to validate
+## Piler daemon supervision
 
-`rc.piler` has no documented foreground mode. `entrypoint.sh` starts it once
-(it forks and manages its own pidfile), and a supervisord watchdog restarts
-it if its pidfile process dies. Confirm this behaves correctly under real
-restart/crash scenarios before relying on it in production.
+`rc.piler` has no foreground mode, so `entrypoint.sh` starts the piler daemon
+once (it forks and manages its own pidfile) and the `piler-watchdog`
+supervisord program watches it from there: if the pidfile process dies it
+restarts it, and if it stays down after a few attempts the watchdog terminates
+supervisord so the whole container is restarted clean by the orchestrator.
+`validate.yml` exercises this escalation by forcing a service `FATAL` and
+asserting the container goes down.
