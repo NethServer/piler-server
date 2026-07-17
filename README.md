@@ -66,6 +66,7 @@ this image. `entrypoint.sh` only fills in environment-specific values:
   creates the schema, starts `rc.piler`, hands off to supervisord.
 - `config/supervisord.conf` — what supervisord starts and how logs stream.
 - `config/exit-on-fatal-listener.py` — the `exit-on-fatal` listener above.
+- `config/piler-watchdog.sh` — the `piler-watchdog` program above.
 - `build-images.sh` — local build/tag helper, also used by CI.
 - `dockerfile-vars.sh` — reads `PILER_VERSION`/`BASE_IMAGE` back out of the
   Dockerfile, shared by `build-images.sh` and `release-tag.sh`.
