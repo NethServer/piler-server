@@ -59,6 +59,11 @@ for arg in "$@"; do
     esac
 done
 
+if [[ "${do_show}" -eq 1 && ( "${do_tag}" -eq 1 || "${do_push}" -eq 1 ) ]]; then
+    echo "--show cannot be combined with --tag or --push" >&2
+    exit 1
+fi
+
 if [[ "${do_show}" -eq 1 ]]; then
     require_vars
     echo "${tag}"
