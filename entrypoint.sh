@@ -7,6 +7,11 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+# Secret material (piler.key, .my.cnf, config files carrying the DB password)
+# is written here; default to owner-only so there is no world-readable window
+# before the explicit chmod 600 in give_it_to_piler.
+umask 077
+
 CONFIG_DIR="/etc/piler"
 PILER_CONF="${CONFIG_DIR}/piler.conf"
 PILER_KEY="${CONFIG_DIR}/piler.key"
@@ -44,6 +49,17 @@ safe_sed() {
    rm -f "$tmp"
 }
 
+# Escape a value for safe use as the replacement text in `sed "s<delim>...<delim>"`.
+# Backslash, ampersand and the chosen delimiter are special there, so a
+# password containing any of them would otherwise break or corrupt the edit.
+sed_replacement() {
+   local delim="$1" s="$2"
+   s="${s//\\/\\\\}"
+   s="${s//&/\\&}"
+   s="${s//"${delim}"/\\${delim}}"
+   printf '%s' "$s"
+}
+
 pre_flight_check() {
    [[ -v PILER_HOSTNAME ]] || error "Missing PILER_HOSTNAME env variable"
    [[ -v MYSQL_HOSTNAME ]] || error "Missing MYSQL_HOSTNAME env variable"
@@ -68,7 +84,7 @@ make_certificate() {
 
    log "Making an ssl certificate"
 
-   openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -subj "$SSL_CERT_DATA" -keyout "$f" -out "$crt" -sha1 2>/dev/null
+   openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -subj "$SSL_CERT_DATA" -keyout "$f" -out "$crt" -sha256 2>/dev/null
    cat "$crt" >> "$f"
    rm -f "$crt"
 
@@ -114,11 +130,16 @@ fix_configs() {
 
    log "Updating ${PILER_CONF}"
 
+   # The password may contain sed-special characters; escape it per delimiter.
+   local mysql_pass_slash mysql_pass_pct
+   mysql_pass_slash="$(sed_replacement / "$MYSQL_PASSWORD")"
+   mysql_pass_pct="$(sed_replacement % "$MYSQL_PASSWORD")"
+
    safe_sed "$PILER_CONF" \
       -e "s/mysqlhost=.*/mysqlhost=${MYSQL_HOSTNAME}/g" \
       -e "s/mysqluser=.*/mysqluser=${MYSQL_USER}/g" \
       -e "s/mysqldb=.*/mysqldb=${MYSQL_DATABASE}/g" \
-      -e "s/verystrongpassword/${MYSQL_PASSWORD}/g" \
+      -e "s/verystrongpassword/${mysql_pass_slash}/g" \
       -e "s/hostid=.*/hostid=${PILER_HOSTNAME}/g" \
       -e "s/tls_enable=.*/tls_enable=1/g" \
       -e "s/sphxhost=.*/sphxhost=${MANTICORE_HOSTNAME}/g" \
@@ -152,7 +173,7 @@ fix_configs() {
       -e "s%MYSQL_HOSTNAME%${MYSQL_HOSTNAME}%" \
       -e "s%MYSQL_DATABASE%${MYSQL_DATABASE}%" \
       -e "s%MYSQL_USERNAME%${MYSQL_USER}%" \
-      -e "s%MYSQL_PASSWORD%${MYSQL_PASSWORD}%"
+      -e "s%MYSQL_PASSWORD%${mysql_pass_pct}%"
 
    # Fixes for RT index
 
@@ -181,6 +202,11 @@ fix_configs() {
       safe_sed /var/piler/www/assets/js/piler.js -e "s#location.origin\ +\ .*#location.origin\ +\ $PATH_PREFIX,#"
       safe_sed "$CONFIG_SITE_PHP" -e "s#^\$config\['PATH_PREFIX'\].*#\$config\['PATH_PREFIX'\] = '$PATH_PREFIX';#"
    fi
+
+   # Both files carry the DB password in plaintext; lock them to piler:piler
+   # 600 like piler.conf and .my.cnf, instead of leaving template permissions.
+   give_it_to_piler "$CONFIG_SITE_PHP"
+   give_it_to_piler "$SPHINX_CONF"
 }
 
 wait_until_mysql_server_is_ready() {
@@ -208,7 +234,9 @@ init_database() {
    fi
 
    if [[ -v ADMIN_USER_PASSWORD_HASH ]]; then
-      mysql "--defaults-file=${PILER_MY_CNF}" "$MYSQL_DATABASE" <<< "update user set password='${ADMIN_USER_PASSWORD_HASH}' where uid=0"
+      # Double any single quote so the hash can't break out of the SQL literal.
+      local admin_hash="${ADMIN_USER_PASSWORD_HASH//\'/\'\'}"
+      mysql "--defaults-file=${PILER_MY_CNF}" "$MYSQL_DATABASE" <<< "update user set password='${admin_hash}' where uid=0"
    fi
 }
 
