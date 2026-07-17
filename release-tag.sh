@@ -10,9 +10,12 @@ set -o pipefail
 set -o nounset
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
-source ./dockerfile-vars.sh
 
-tag="v${piler_version}-${base_image_tag}"
+# Tolerate an unparseable Dockerfile here so --help still works; the --show
+# and --tag paths validate the values before relying on them.
+source ./dockerfile-vars.sh || true
+
+tag="v${piler_version:-}-${base_image_tag:-}"
 
 usage() {
     cat <<EOF
@@ -25,6 +28,13 @@ Usage: ./release-tag.sh --show|--tag [--push]
 
 Current Dockerfile would release as: ${tag}
 EOF
+}
+
+require_vars() {
+    if [[ -z "${piler_version:-}" || -z "${base_image_tag:-}" ]]; then
+        echo "Could not read PILER_VERSION / BASE_IMAGE from Dockerfile" >&2
+        exit 1
+    fi
 }
 
 if [[ $# -eq 0 ]]; then
@@ -49,7 +59,13 @@ for arg in "$@"; do
     esac
 done
 
+if [[ "${do_show}" -eq 1 && ( "${do_tag}" -eq 1 || "${do_push}" -eq 1 ) ]]; then
+    echo "--show cannot be combined with --tag or --push" >&2
+    exit 1
+fi
+
 if [[ "${do_show}" -eq 1 ]]; then
+    require_vars
     echo "${tag}"
     exit 0
 fi
@@ -59,6 +75,8 @@ if [[ "${do_tag}" -ne 1 ]]; then
     usage
     exit 1
 fi
+
+require_vars
 
 if git rev-parse "${tag}" >/dev/null 2>&1; then
     echo "Tag '${tag}' already exists" >&2
