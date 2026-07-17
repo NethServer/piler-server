@@ -15,9 +15,16 @@ jobs:
   validate:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v6
         with:
+          # This ref is untrusted (the branch/PR that triggered the build);
+          # don't leave the GITHUB_TOKEN in .git/config where the compose
+          # stack we run from that ref could read it.
+          persist-credentials: false
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Compute image reference
