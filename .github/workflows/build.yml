@@ -25,6 +25,13 @@ concurrency:
 
 jobs:
   build-and-push:
+    # Internal branches only: skip PRs opened from forks so untrusted code is
+    # never built or run in CI. validate.yml is chained via workflow_run on
+    # this job, so skipping forks here also stops validate from ever running
+    # for a fork. push and workflow_dispatch already require write access.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
