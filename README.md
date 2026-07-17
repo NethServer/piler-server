@@ -124,7 +124,10 @@ Required (`entrypoint.sh`'s `pre_flight_check` aborts if any is missing):
 
 Optional:
 
-- `RT` (default `0`) — enable manticore real-time indexing instead of batch.
+- `RT` (default `1`, and must be `1`) — real-time manticore indexing. This
+  image only supports RT mode: manticore runs as a separate container and no
+  local `indexer` binary is shipped, so batch indexing (`RT=0`) cannot build
+  or rotate indexes. The entrypoint rejects any value other than `1`.
 - `PATH_PREFIX` — set if piler's web UI is served behind a reverse-proxy
   path prefix.
 - `ADMIN_USER_PASSWORD_HASH` — if set, overwrites the built-in admin
