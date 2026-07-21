@@ -69,7 +69,7 @@ pre_flight_check() {
    # This image only supports real-time indexing (RT=1): manticore runs in a
    # separate container and no local `indexer` binary is installed, so batch
    # indexing (RT=0) cannot build or rotate indexes here.
-   [[ "$RT" == "1" ]] || error "RT must be 1 (real-time mode). This image runs piler against an external manticore container with no local indexer binary, so batch indexing (RT=0) is unsupported."
+   [[ "$RT" == "1" ]] || error "RT must be 1 (real-time mode), got RT='${RT}'. This image runs piler against an external manticore container with no local indexer binary, so any value other than 1 (including batch mode RT=0) is unsupported."
 }
 
 give_it_to_piler() {
@@ -181,7 +181,7 @@ fix_configs() {
 
    # Fixes for RT index
 
-   if [[ $RT -eq 1 ]]; then
+   if [[ "$RT" == "1" ]]; then
       safe_sed "$SPHINX_CONF" "s/define('RT', 0)/define('RT', 1)/"
       if ! grep -q "'RT'" "$CONFIG_SITE_PHP"; then
          echo "\$config['RT'] = 1;" >> "$CONFIG_SITE_PHP"
