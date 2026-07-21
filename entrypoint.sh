@@ -196,6 +196,13 @@ fix_configs() {
       echo "\$config['SPHINX_HOSTNAME_READONLY'] = '${MANTICORE_HOSTNAME}:9307';" >> "$CONFIG_SITE_PHP"
    fi
 
+   # The UI "Apply changes" button runs RELOAD_COMMAND. Everything here is the
+   # same unprivileged piler user, so call rc.piler directly - no sudo/systemctl
+   # (which also sidesteps the broken systemctl-probe default, jsuto #479).
+   if ! grep -q "'RELOAD_COMMAND'" "$CONFIG_SITE_PHP"; then
+      echo "\$config['RELOAD_COMMAND'] = '/etc/init.d/rc.piler reload';" >> "$CONFIG_SITE_PHP"
+   fi
+
    # Fix for PATH_PREFIX
    if [[ -v PATH_PREFIX ]]; then
       log "PATH_PREFIX set $PATH_PREFIX"
