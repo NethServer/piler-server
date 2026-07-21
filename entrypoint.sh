@@ -7,9 +7,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# Secret material (piler.key, .my.cnf, config files carrying the DB password)
-# is written here; default to owner-only so there is no world-readable window
-# before the explicit chmod 600 in give_it_to_piler.
+# Secret material (piler.key, .my.cnf, config with the DB password) is written
+# here; owner-only until the explicit chmod 600 in give_it_to_piler.
 umask 077
 
 CONFIG_DIR="/etc/piler"
@@ -35,9 +34,8 @@ log() {
    echo "DEBUG:" "$*"
 }
 
-# `sed -i` writes a temp file then renames it over the original, which
-# fails with "Device or resource busy" when the target is a bind mount.
-# Write into the existing inode instead.
+# `sed -i` renames a temp file over the target, which fails with "Device or
+# resource busy" on a bind mount. Write into the existing inode instead.
 safe_sed() {
    local target="$1"
    shift
@@ -49,9 +47,8 @@ safe_sed() {
    rm -f "$tmp"
 }
 
-# Escape a value for safe use as the replacement text in `sed "s<delim>...<delim>"`.
-# Backslash, ampersand and the chosen delimiter are special there, so a
-# password containing any of them would otherwise break or corrupt the edit.
+# Escape a value for use as sed replacement text: backslash, ampersand and the
+# delimiter are special, so a password containing them would corrupt the edit.
 sed_replacement() {
    local delim="$1" s="$2"
    s="${s//\\/\\\\}"
@@ -66,9 +63,8 @@ pre_flight_check() {
    [[ -v MYSQL_DATABASE ]] || error "Missing MYSQL_DATABASE env variable"
    [[ -v MYSQL_USER ]]     || error "Missing MYSQL_USER env variable"
    [[ -v MYSQL_PASSWORD ]] || error "Missing MYSQL_PASSWORD env variable"
-   # This image only supports real-time indexing (RT=1): manticore runs in a
-   # separate container and no local `indexer` binary is installed, so batch
-   # indexing (RT=0) cannot build or rotate indexes here.
+   # Real-time indexing only: manticore runs in a separate container with no
+   # local `indexer`, so batch mode (RT=0) can't build or rotate indexes here.
    [[ "$RT" == "1" ]] || error "RT must be 1 (real-time mode), got RT='${RT}'. This image runs piler against an external manticore container with no local indexer binary, so any value other than 1 (including batch mode RT=0) is unsupported."
 }
 
@@ -266,14 +262,10 @@ create_my_cnf_files() {
 }
 
 start_piler() {
-   # piler.conf's default pidfile path (/var/run/piler/piler.pid) never
-   # gets created, so the pidfile is never written and `rc.piler status`
-   # always reports "NOT running" even though the daemon is up.
-   # fix_configs() redirects pidfile= to /var/piler/run/piler.pid, so
-   # make sure that directory exists too.
+   # fix_configs() points pidfile= at /var/piler/run/piler.pid; ensure the dir
+   # exists, else the pidfile is never written and `rc.piler status` reports
+   # "NOT running" while the daemon is actually up.
    mkdir -p /var/piler/run
-
-   # No pid file should exist for piler
    rm -f /var/piler/run/*pid
 
    /etc/init.d/rc.piler start

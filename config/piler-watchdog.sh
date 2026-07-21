@@ -1,11 +1,9 @@
 #!/bin/sh
 #
-# Watchdog for the piler daemon. piler forks and manages its own pidfile and
-# has no foreground mode, so supervisord can't run it directly. This keeps an
-# eye on the pidfile: restart the daemon if it dies, and if it stays down after
-# a few attempts terminate supervisord (pid 1) so the whole container is
-# restarted clean by the orchestrator - the same escalation exit-on-fatal does
-# for the programs supervisord can supervise itself.
+# Watchdog for the piler daemon: piler forks, manages its own pidfile, and has
+# no foreground mode, so supervisord can't run it directly. Restart the daemon
+# if it dies; if it stays down after a few tries, kill supervisord (pid 1) so
+# the orchestrator restarts the container - same escalation as exit-on-fatal.
 #
 set -u
 
