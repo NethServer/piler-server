@@ -92,12 +92,10 @@ RUN dpkg -i /tmp/piler.deb && \
     mkdir -p /var/piler/run && \
     grep -v 'indexer' /usr/share/piler/piler.cron > /etc/piler.cron
 
-# nginx and php-fpm must run as the same unprivileged user as everything
-# else - there is no root left to drop privileges from. Their default
-# pidfiles/sockets also live under /run/php, which is root-owned tmpfs
-# that a non-root process can't create subdirectories in at container
-# start - relocate them into /var/piler/run instead, which is owned by
-# piler and part of the container's own writable layer.
+# nginx and php-fpm run as the same unprivileged piler user (no root to drop
+# from). Their default pidfiles/sockets live under root-owned /run/php, which a
+# non-root process can't populate at start - relocate them to /var/piler/run,
+# owned by piler in the writable layer.
 RUN sed -i -E \
       -e '/^\s*user\s+\S+;/d' \
       -e 's%^pid\s+/run/nginx\.pid;%pid /var/piler/run/nginx.pid;%' \
