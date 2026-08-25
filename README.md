@@ -15,6 +15,7 @@ mail archiving server.
 - [Debugging](#debugging)
 - [CI](#ci)
 - [Renovate](#renovate)
+- [Attachment text extraction](#attachment-text-extraction)
 - [Piler daemon supervision](#piler-daemon-supervision)
 
 ## Why a separate image
@@ -258,6 +259,23 @@ Three workflows, all under `.github/workflows/`:
   Renovate. When a version-bump PR lands, the build fails on the sha256 check
   until the new digest is pasted in by hand — copy it from the asset's sha256
   on the release page (URLs are in the Dockerfile comments next to each ARG).
+
+## Attachment text extraction
+
+Piler extracts searchable text from attachments with external converters, and
+the image installs the ones it expects: `catdoc` (legacy `.doc`), `unrtf`,
+`poppler-utils` (`pdftotext`), `tnef`.
+
+`catdoc` is kept deliberately, despite [jsuto/piler#484](https://github.com/jsuto/piler/issues/484)
+asking for a replacement. It is unmaintained since 2010 with unpatched parser
+bugs, and it runs on untrusted attachments — a real concern, not a theoretical
+one. But availability is not the problem (`1:0.95-6build1` is in Ubuntu
+resolute *and* stonking, `1:0.95-6` in Debian trixie/forky/sid, so no build
+break is coming) and there is no reasonable substitute: `antiword` is equally
+dead, LibreOffice headless adds hundreds of megabytes, Apache Tika needs a JVM.
+
+So: keep it, and revisit if upstream picks a replacement or a distribution
+drops the package.
 
 ## Piler daemon supervision
 
