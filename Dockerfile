@@ -45,6 +45,17 @@ RUN curl -fsSLo supercronic \
     echo "${SUPERCRONIC_SHA256}  supercronic" | sha256sum -c - && \
     chmod +x supercronic
 
+# --- stage: shim ------------------------------------------------------------
+FROM ${BASE_IMAGE} AS shim
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libc6-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY config/syslog-to-stderr.c /tmp/syslog-to-stderr.c
+RUN gcc -O2 -Wall -Wextra -fPIC -shared -o /syslog-to-stderr.so /tmp/syslog-to-stderr.c
+
 # --- stage: runtime ----------------------------------------------------------
 FROM ${BASE_IMAGE} AS runtime
 
@@ -81,6 +92,7 @@ RUN if id ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
 
 COPY --from=fetcher /fetch/piler.deb /tmp/piler.deb
 COPY --from=fetcher /fetch/supercronic /usr/local/bin/supercronic
+COPY --from=shim /syslog-to-stderr.so /usr/local/lib/syslog-to-stderr.so
 
 # piler's own postinst creates the "piler" system user - let it, then pin
 # its uid/gid to a fixed value so bind-mounted host directories keep

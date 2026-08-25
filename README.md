@@ -66,6 +66,7 @@ this image. `entrypoint.sh` only fills in environment-specific values:
 - `config/exit-on-fatal-listener.py` — the `exit-on-fatal` listener above.
 - `config/piler-run.sh` — runs the piler daemon in the foreground for
   supervisord, see below.
+- `config/syslog-to-stderr.c` — the `LD_PRELOAD` shim below.
 - `build-images.sh` — local build/tag helper, also used by CI.
 - `dockerfile-vars.sh` — reads `PILER_VERSION`/`BASE_IMAGE` back out of the
   Dockerfile, shared by `build-images.sh` and `release-tag.sh`.
@@ -283,6 +284,22 @@ that clears itself.
 A daemon that dies is restarted; one that crash-loops past `startretries` goes
 `FATAL`, and the `exit-on-fatal` listener kills supervisord so the orchestrator
 restarts the container clean. `validate.yml` exercises both paths.
+
+### Piler's logs
+
+`piler` and `piler-smtp` log only through `syslog(3)`, and there is no `/dev/log`
+in the container — uid 1000 can't create one in the runtime's root-owned `/dev`.
+Every line was dropped, so the daemons were the only thing here without logs.
+
+`config/syslog-to-stderr.c` is an `LD_PRELOAD` shim overriding `syslog` and
+`__syslog_chk` (the piler binaries are built fortified, so that's the symbol
+they actually call) to write to stderr instead. Supervisord then ships those
+lines to the container log like nginx's and php-fpm's. It's compiled in its own
+build stage, and preloaded for `piler`, `piler-smtp` and `supercronic` only —
+never for php-fpm or nginx, which have real log configuration.
+
+Upstream would be the better place to fix this (`LOG_PERROR` when not
+daemonising, or a config toggle); drop the shim if that lands.
 
 ### Graceful stop
 
