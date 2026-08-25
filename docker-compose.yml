@@ -66,6 +66,10 @@ services:
     volumes:
       - piler_etc:/etc/piler
       - piler_store:/var/piler/store
+      - piler_spool:/var/piler/tmp
+    # Long enough for the drain in config/piler-run.sh; the 10s default would
+    # SIGKILL the container mid-spool.
+    stop_grace_period: 360s
     # Mirrors the image HEALTHCHECK, which podman's OCI format drops.
     healthcheck:
       test: curl -fsS http://localhost/ >/dev/null && curl -fsS --max-time 3 smtp://localhost:25/ >/dev/null
@@ -93,4 +97,5 @@ volumes:
   db_data: {}
   piler_etc: {}
   piler_manticore: {}
+  piler_spool: {}
   piler_store: {}
