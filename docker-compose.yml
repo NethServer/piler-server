@@ -66,8 +66,9 @@ services:
     volumes:
       - piler_etc:/etc/piler
       - piler_store:/var/piler/store
+    # Mirrors the image HEALTHCHECK, which podman's OCI format drops.
     healthcheck:
-      test: curl -s smtp://localhost/
+      test: curl -fsS http://localhost/ >/dev/null && curl -fsS --max-time 3 smtp://localhost:25/ >/dev/null
       interval: "20s"
       timeout: "3s"
       start_period: "15s"

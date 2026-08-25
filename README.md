@@ -41,11 +41,9 @@ That constraint shapes the Dockerfile:
   uid/gid to `1000` so volumes keep stable ownership across rebuilds.
 
 Everything is supervised by `supervisord` (`config/supervisord.conf`), which
-starts `nginx`, `php-fpm`, a `piler-watchdog` program (restarts the piler
-daemon if its pidfile process dies, and — if it stays down after a few
-attempts — terminates supervisord so the container is restarted clean),
-`supercronic` (runs `/etc/piler.cron`), and an `exit-on-fatal` listener that
-kills supervisord if any supervised program crash-loops past its retry limit.
+starts `piler`, `piler-smtp`, `nginx`, `php-fpm`, `supercronic` (runs
+`/etc/piler.cron`), and an `exit-on-fatal` listener that kills supervisord if
+any supervised program crash-loops past its retry limit.
 
 ### Piler's own config files
 
@@ -63,10 +61,11 @@ this image. `entrypoint.sh` only fills in environment-specific values:
 
 - `Dockerfile` — the image: a `fetcher` stage plus a `runtime` stage.
 - `entrypoint.sh` — generates the config files above, waits for MySQL,
-  creates the schema, starts `rc.piler`, hands off to supervisord.
+  creates the schema, hands off to supervisord.
 - `config/supervisord.conf` — what supervisord starts and how logs stream.
 - `config/exit-on-fatal-listener.py` — the `exit-on-fatal` listener above.
-- `config/piler-watchdog.sh` — the `piler-watchdog` program above.
+- `config/piler-run.sh` — runs the piler daemon in the foreground for
+  supervisord, see below.
 - `build-images.sh` — local build/tag helper, also used by CI.
 - `dockerfile-vars.sh` — reads `PILER_VERSION`/`BASE_IMAGE` back out of the
   Dockerfile, shared by `build-images.sh` and `release-tag.sh`.
@@ -261,10 +260,21 @@ Three workflows, all under `.github/workflows/`:
 
 ## Piler daemon supervision
 
-`rc.piler` has no foreground mode, so `entrypoint.sh` starts the piler daemon
-once (it forks and manages its own pidfile) and the `piler-watchdog`
-supervisord program watches it from there: if the pidfile process dies it
-restarts it, and if it stays down after a few attempts the watchdog terminates
-supervisord so the whole container is restarted clean by the orchestrator.
-`validate.yml` exercises this escalation by forcing a service `FATAL` and
-asserting the container goes down.
+`piler` and `piler-smtp` are ordinary supervisord programs. `-d` is optional for
+both, and `piler` writes its pidfile even without it, so foreground mode keeps
+`rc.piler reload` (the web UI's "Apply changes" button) working.
+`config/piler-run.sh` only wraps `piler` to clear a pidfile left by a SIGKILL —
+piler refuses to start when one exists.
+
+`priority` orders them: supervisord starts low-to-high and stops high-to-low, so
+`piler` (100) comes up before `piler-smtp` (200) accepts mail, and on the way
+down nginx/php-fpm/supercronic (999) go first, then the intake, then the
+archiver. `piler-smtp` also gets `startretries=15`, because its listener has no
+`SO_REUSEADDR`: after any client connection a respawn takes up to ~60s of
+TIME_WAIT before it can rebind port 25 (measured at 68s locally), exiting 1
+meanwhile — the default 3 retries would take the container down over a window
+that clears itself.
+
+A daemon that dies is restarted; one that crash-loops past `startretries` goes
+`FATAL`, and the `exit-on-fatal` listener kills supervisord so the orchestrator
+restarts the container clean. `validate.yml` exercises both paths.

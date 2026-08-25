@@ -268,20 +268,11 @@ create_my_cnf_files() {
    give_it_to_piler "$PILER_MY_CNF"
 }
 
-start_piler() {
-   # fix_configs() points pidfile= at /var/piler/run/piler.pid; ensure the dir
-   # exists, else the pidfile is never written and `rc.piler status` reports
-   # "NOT running" while the daemon is actually up.
-   mkdir -p /var/piler/run
-   rm -f /var/piler/run/*pid
-
-   /etc/init.d/rc.piler start
-}
-
 pre_flight_check
 fix_configs
 create_my_cnf_files
 init_database
-start_piler
 
+# piler and piler-smtp are supervisord programs; init_database() above already
+# waited for the database they need.
 exec "$@"
