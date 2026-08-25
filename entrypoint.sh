@@ -11,7 +11,8 @@ set -o nounset
 # here; owner-only until the explicit chmod 600 in give_it_to_piler.
 umask 077
 
-CONFIG_DIR="/etc/piler"
+# Overridable so tests/entrypoint-config-test.sh can run fix_configs offline.
+CONFIG_DIR="${CONFIG_DIR:-/etc/piler}"
 PILER_CONF="${CONFIG_DIR}/piler.conf"
 PILER_KEY="${CONFIG_DIR}/piler.key"
 PILER_PEM="${CONFIG_DIR}/piler.pem"
@@ -22,8 +23,9 @@ PILER_MY_CNF="${CONFIG_DIR}/.my.cnf"
 RT="${RT:-1}"
 MEMCACHED_HOSTNAME="${MEMCACHED_HOSTNAME:-memcached}"
 MANTICORE_HOSTNAME="${MANTICORE_HOSTNAME:-manticore}"
-TMP_CONF_DIR="/tmp/piler-conf"
+TMP_CONF_DIR="${TMP_CONF_DIR:-/tmp/piler-conf}"
 PILER_USER="${PILER_USER:-piler}"
+PILER_JS="${PILER_JS:-/var/piler/www/assets/js/piler.js}"
 # Everything from this line to the end of config-site.php is rewritten on every
 # start, so a rotated password or a renamed service is picked up. Hand edits
 # belong above it. Kept slash-free so it needs no escaping as a sed address.
@@ -127,11 +129,11 @@ fix_configs() {
    [[ -f "$PILER_KEY" ]] || make_piler_key "$PILER_KEY"
    [[ -f "$PILER_PEM" ]] || make_certificate "$PILER_PEM"
 
-   [[ -f /etc/piler/MANTICORE ]] || touch /etc/piler/MANTICORE
+   [[ -f "${CONFIG_DIR}/MANTICORE" ]] || touch "${CONFIG_DIR}/MANTICORE"
 
-   # Templates always come from TMP_CONF_DIR, never from the /etc/piler
-   # volume itself, or a stale one would never pick up an image update.
-   [[ -f /etc/piler/manticore.conf ]] || cp "${TMP_CONF_DIR}/manticore.conf" /etc/piler
+   # Templates always come from TMP_CONF_DIR, never from the config volume
+   # itself, or a stale one would never pick up an image update.
+   [[ -f "$SPHINX_CONF" ]] || cp "${TMP_CONF_DIR}/manticore.conf" "$SPHINX_CONF"
 
    # Also regenerate if an older template left it without a listen directive.
    if [[ ! -f "$PILER_NGINX_CONF" ]] || ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
@@ -227,7 +229,7 @@ fix_configs() {
 
    if [[ -v PATH_PREFIX ]]; then
       log "PATH_PREFIX set $PATH_PREFIX"
-      safe_sed /var/piler/www/assets/js/piler.js -e "s#location.origin\ +\ .*#location.origin\ +\ $(sed_replacement '#' "$PATH_PREFIX"),#"
+      safe_sed "$PILER_JS" -e "s#location.origin\ +\ .*#location.origin\ +\ $(sed_replacement '#' "$PATH_PREFIX"),#"
    fi
 
    # Both files carry the DB password in plaintext; lock them to piler:piler
@@ -288,11 +290,15 @@ create_my_cnf_files() {
    give_it_to_piler "$PILER_MY_CNF"
 }
 
-pre_flight_check
-fix_configs
-create_my_cnf_files
-init_database
+# Sourcing this file (tests/entrypoint-config-test.sh) defines the functions
+# without starting anything.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+   pre_flight_check
+   fix_configs
+   create_my_cnf_files
+   init_database
 
-# piler and piler-smtp are supervisord programs; init_database() above already
-# waited for the database they need.
-exec "$@"
+   # piler and piler-smtp are supervisord programs; init_database() above
+   # already waited for the database they need.
+   exec "$@"
+fi
