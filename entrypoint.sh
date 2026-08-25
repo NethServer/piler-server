@@ -135,11 +135,22 @@ fix_configs() {
    mysql_pass_slash="$(sed_replacement / "$MYSQL_PASSWORD")"
    mysql_pass_pct="$(sed_replacement % "$MYSQL_PASSWORD")"
 
+   # Each key below is edited by matching the key, not the value the template
+   # ships: a placeholder is gone after the first start, so matching it would
+   # silently stop applying the setting. Same trap if a key is renamed upstream,
+   # hence the check - a no-op sed here means a stale password or hostname.
+   local key
+   for key in mysqlhost mysqluser mysqldb mysqlpwd hostid tls_enable sphxhost \
+              rtindex mysqlsocket pidfile; do
+      grep -q "^${key}=" "$PILER_CONF" \
+         || error "no ${key}= line in ${PILER_CONF}, the piler.conf template changed"
+   done
+
    safe_sed "$PILER_CONF" \
       -e "s/mysqlhost=.*/mysqlhost=${MYSQL_HOSTNAME}/g" \
       -e "s/mysqluser=.*/mysqluser=${MYSQL_USER}/g" \
       -e "s/mysqldb=.*/mysqldb=${MYSQL_DATABASE}/g" \
-      -e "s/verystrongpassword/${mysql_pass_slash}/g" \
+      -e "s/mysqlpwd=.*/mysqlpwd=${mysql_pass_slash}/g" \
       -e "s/hostid=.*/hostid=${PILER_HOSTNAME}/g" \
       -e "s/tls_enable=.*/tls_enable=1/g" \
       -e "s/sphxhost=.*/sphxhost=${MANTICORE_HOSTNAME}/g" \
