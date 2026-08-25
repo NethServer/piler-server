@@ -131,18 +131,18 @@ RUN sed -i -E \
 COPY entrypoint.sh /entrypoint.sh
 COPY config/supervisord.conf /etc/supervisor/supervisord.conf
 COPY config/exit-on-fatal-listener.py /etc/supervisor/exit-on-fatal-listener.py
-COPY config/piler-watchdog.sh /etc/supervisor/piler-watchdog.sh
-RUN chmod +x /entrypoint.sh /etc/supervisor/piler-watchdog.sh && \
+COPY config/piler-run.sh /etc/supervisor/piler-run.sh
+RUN chmod +x /entrypoint.sh /etc/supervisor/piler-run.sh && \
     chown -R piler:piler /tmp/piler-conf && \
-    chown piler:piler /entrypoint.sh /etc/supervisor/supervisord.conf /etc/supervisor/exit-on-fatal-listener.py /etc/supervisor/piler-watchdog.sh
+    chown piler:piler /entrypoint.sh /etc/supervisor/supervisord.conf /etc/supervisor/exit-on-fatal-listener.py /etc/supervisor/piler-run.sh
 
 VOLUME ["/etc/piler", "/var/piler/store"]
 
 EXPOSE 25 80 443
 
-# Liveness: nginx serving the web UI means supervisord and php-fpm are up.
+# Probing the web UI alone would report healthy with mail intake dead.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://localhost/ >/dev/null || exit 1
+    CMD curl -fsS http://localhost/ >/dev/null && curl -fsS --max-time 3 smtp://localhost:25/ >/dev/null || exit 1
 
 USER piler
 

@@ -227,6 +227,59 @@ jobs:
           fi
           echo "archived mail survived the restart, ${count} row(s) found"
 
+      - name: Supervisord restarts the piler daemons when they die
+        run: |
+          # piler-smtp needs up to ~60s of TIME_WAIT to clear before it rebinds.
+          wait_for_process() {
+            for i in $(seq 1 60); do
+              if docker compose exec -T piler sh -c "pgrep -x $1 >/dev/null"; then
+                echo "$1 is running again after ${i} tries"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "$1 was not restarted by supervisord" >&2
+            docker compose logs piler >&2
+            return 1
+          }
+
+          # -o picks the master among the forked children, -x excludes piler-smtp.
+          docker compose exec -T piler sh -c 'kill "$(pgrep -o -x piler-smtp)"'
+          wait_for_process piler-smtp
+
+          docker compose exec -T piler sh -c 'kill "$(pgrep -o -x piler)"'
+          wait_for_process piler
+
+          # Prove the pipeline still archives after the respawn.
+          # Message-ID must be unique: piler treats a missing or repeated one as
+          # a duplicate of the mail sent earlier in this run and discards it.
+          printf 'From: sender@example.com\nTo: admin@local\nSubject: CI respawn mail\nMessage-ID: <respawn-%s@ci.example.com>\n\nsent after supervisord respawned the daemons\n' "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" > /tmp/respawn-mail.txt
+
+          for i in $(seq 1 10); do
+            if curl -sS --url smtp://localhost:25 \
+                 --mail-from "sender@example.com" \
+                 --mail-rcpt "admin@local" \
+                 --upload-file /tmp/respawn-mail.txt; then
+              break
+            fi
+            sleep 2
+          done
+
+          for i in $(seq 1 15); do
+            count=$(docker compose exec -T mysql \
+              mariadb -upiler -ppiler123 piler -N -e \
+              "SELECT COUNT(*) FROM metadata WHERE subject = 'CI respawn mail';")
+            if [ "${count}" -ge 1 ]; then
+              echo "mail sent after the respawn was archived"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "mail sent after the respawn was never archived" >&2
+          docker compose logs piler >&2
+          exit 1
+
       # Destructive: leaves piler down, so keep it last before teardown.
       - name: exit-on-fatal brings the container down on a FATAL service
         run: |
