@@ -203,6 +203,25 @@ jobs:
           echo "full-text search did not find the archived mail" >&2
           exit 1
 
+      - name: Piler's own logs reach the container log
+        run: |
+          logs=$(docker compose logs piler)
+
+          # ident[pid]: is the shim's format; without it piler logs only to a
+          # syslog socket the container doesn't have, and none of this exists.
+          for pattern in \
+            'piler-smtp\[[0-9]+\]: piler-smtp .* starting' \
+            'piler\[[0-9]+\]: piler .* starting' \
+            'piler-smtp\[[0-9]+\]: received: ' \
+            'piler\[[0-9]+\]: .*status=stored'; do
+            if ! printf '%s' "${logs}" | grep -qE "${pattern}"; then
+              echo "no piler log line matching: ${pattern}" >&2
+              printf '%s' "${logs}" | tail -50 >&2
+              exit 1
+            fi
+          done
+          echo "piler and piler-smtp log lines are in the container log"
+
       - name: Restart the stack and check the archived mail survives
         run: |
           docker compose restart mysql piler
