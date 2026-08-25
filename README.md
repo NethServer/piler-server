@@ -137,6 +137,8 @@ Optional:
 - `MANTICORE_HOSTNAME` (default `manticore`), `MEMCACHED_HOSTNAME` (default
   `memcached`) — override if those services aren't named as in
   `docker-compose.yml`.
+- `PILER_STOP_DRAIN` (default `1`), `PILER_STOP_DRAIN_TIMEOUT` (default `300`),
+  `PILER_STOP_DRAIN_INTERVAL` (default `2`) — graceful stop, see below.
 
 ### Volumes
 
@@ -146,6 +148,9 @@ Optional:
   persists across restarts. To force regeneration, delete the corresponding
   file from the volume and restart the container.
 - `piler_store` (`/var/piler/store`) — the actual archived mail. Back it up.
+- `piler_spool` (`/var/piler/tmp`) — mail accepted by `piler-smtp` and not yet
+  archived by `piler`. Transient, not a backup target, but it must be a volume:
+  a container recreation with a non-empty spool would otherwise drop that mail.
 
 ### Default credentials
 
@@ -278,3 +283,18 @@ that clears itself.
 A daemon that dies is restarted; one that crash-loops past `startretries` goes
 `FATAL`, and the `exit-on-fatal` listener kills supervisord so the orchestrator
 restarts the container clean. `validate.yml` exercises both paths.
+
+### Graceful stop
+
+On `SIGTERM`, `config/piler-run.sh` waits for `piler` to empty `/var/piler/tmp`
+before stopping it — `piler-smtp` is already down by then, so nothing refills
+the spool. It gives up after `PILER_STOP_DRAIN_TIMEOUT` seconds and stops piler
+anyway; `PILER_STOP_DRAIN=0` skips the wait entirely. Without this, mail already
+accepted sat in the spool until the next start, delayed behind whatever arrived
+after it.
+
+The effective window is `min(container stop grace, PILER_STOP_DRAIN_TIMEOUT)`,
+and the engine default grace is 10s — far below the 300s default here.
+`docker-compose.yml` sets `stop_grace_period: 360s`; anything else running this
+image needs the equivalent (`podman stop -t`, or `TimeoutStopSec` on the systemd
+unit under NS8), otherwise the container is SIGKILLed mid-drain.

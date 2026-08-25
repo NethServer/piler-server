@@ -280,6 +280,48 @@ jobs:
           docker compose logs piler >&2
           exit 1
 
+      - name: A graceful stop drains the spool
+        run: |
+          for n in $(seq 1 100); do
+            printf 'From: sender@example.com\nTo: admin@local\nSubject: CI drain mail\nMessage-ID: <drain-%s-%s@ci.example.com>\n\ndrain test %s\n' \
+              "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "${n}" "${n}" > /tmp/drain-mail.txt
+            curl -sS --url smtp://localhost:25 \
+              --mail-from "sender@example.com" \
+              --mail-rcpt "admin@local" \
+              --upload-file /tmp/drain-mail.txt >/dev/null
+          done
+          echo "sent 100 mails"
+
+          docker compose stop -t 120 piler
+
+          if ! docker compose logs piler | grep -qE 'piler-run: (spool drained|giving up)'; then
+            echo "the drain never ran on stop" >&2
+            docker compose logs piler >&2
+            exit 1
+          fi
+
+          docker compose start piler
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || true)
+            if [ "${code}" = "200" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          # Every mail accepted before the stop must be archived: nothing may be
+          # left in the spool, and nothing may have been lost with the container.
+          count=$(docker compose exec -T mysql \
+            mariadb -upiler -ppiler123 piler -N -e \
+            "SELECT COUNT(*) FROM metadata WHERE subject = 'CI drain mail';")
+
+          if [ "${count}" -ne 100 ]; then
+            echo "expected 100 archived mails after the drained stop, got ${count}" >&2
+            docker compose logs piler >&2
+            exit 1
+          fi
+          echo "all 100 mails archived across the drained stop"
+
       # Destructive: leaves piler down, so keep it last before teardown.
       - name: exit-on-fatal brings the container down on a FATAL service
         run: |

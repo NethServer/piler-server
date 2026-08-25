@@ -62,7 +62,10 @@ LABEL org.opencontainers.image.source="https://github.com/NethServer/piler-serve
 
 ENV DEBIAN_FRONTEND="noninteractive" \
     PILER_USER="piler" \
-    MYSQL_DATABASE="piler"
+    MYSQL_DATABASE="piler" \
+    PILER_STOP_DRAIN="1" \
+    PILER_STOP_DRAIN_TIMEOUT="300" \
+    PILER_STOP_DRAIN_INTERVAL="2"
 
 # hadolint ignore=DL3008
 RUN if id ubuntu >/dev/null 2>&1; then userdel -r ubuntu; fi && \
@@ -136,7 +139,9 @@ RUN chmod +x /entrypoint.sh /etc/supervisor/piler-run.sh && \
     chown -R piler:piler /tmp/piler-conf && \
     chown piler:piler /entrypoint.sh /etc/supervisor/supervisord.conf /etc/supervisor/exit-on-fatal-listener.py /etc/supervisor/piler-run.sh
 
-VOLUME ["/etc/piler", "/var/piler/store"]
+# /var/piler/tmp holds mail accepted but not yet archived: on a volume, or a
+# container recreation with a non-empty spool loses it.
+VOLUME ["/etc/piler", "/var/piler/store", "/var/piler/tmp"]
 
 EXPOSE 25 80 443
 
