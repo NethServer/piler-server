@@ -322,6 +322,88 @@ jobs:
           fi
           echo "all 100 mails archived across the drained stop"
 
+      - name: The drain waits, then gives up on a stuck spool
+        run: |
+          # The archiver empties a fresh spool in seconds, so the waiting branch
+          # only shows up if it cannot drain: freeze piler and shorten the
+          # timeout, otherwise this step would prove nothing.
+          cat > /tmp/drain-override.yml <<'YAML'
+          services:
+            piler:
+              environment:
+                - PILER_STOP_DRAIN_TIMEOUT=10
+                - PILER_STOP_DRAIN_INTERVAL=2
+          YAML
+
+          docker compose -f docker-compose.yml -f /tmp/drain-override.yml up -d --force-recreate piler
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || true)
+            if [ "${code}" = "200" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          # -x excludes piler-smtp, which must stay alive to accept the mails.
+          docker compose exec -T piler sh -c 'for p in $(pgrep -x piler); do kill -STOP "$p"; done'
+
+          for n in $(seq 1 20); do
+            printf 'From: sender@example.com\nTo: admin@local\nSubject: CI spool mail\nMessage-ID: <spool-%s-%s@ci.example.com>\n\nstuck in the spool\n' \
+              "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "${n}" > /tmp/spool-mail.txt
+            curl -sS --url smtp://localhost:25 \
+              --mail-from "sender@example.com" \
+              --mail-rcpt "admin@local" \
+              --upload-file /tmp/spool-mail.txt >/dev/null
+          done
+
+          left=$(docker compose exec -T piler sh -c 'find /var/piler/tmp -type f | wc -l')
+          if [ "${left}" -lt 1 ]; then
+            echo "the spool is empty with the archiver frozen, nothing to drain" >&2
+            exit 1
+          fi
+          echo "${left} file(s) stuck in the spool"
+
+          docker compose stop -t 60 piler
+
+          logs=$(docker compose logs piler)
+          for pattern in 'piler-run: draining spool, [0-9]+ file\(s\) left' 'piler-run: giving up with [0-9]+ file\(s\) left after [0-9]+s'; do
+            if ! printf '%s' "${logs}" | grep -qE "${pattern}"; then
+              echo "no drain log line matching: ${pattern}" >&2
+              printf '%s' "${logs}" | tail -30 >&2
+              exit 1
+            fi
+          done
+          echo "the drain waited, then gave up as expected"
+
+      - name: A non-empty spool survives a container recreation
+        run: |
+          # The previous step left mail in the spool. On the image layer it would
+          # be gone with the container; on a volume it must come back.
+          docker compose rm -f piler
+          docker compose up -d piler
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || true)
+            if [ "${code}" = "200" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          for i in $(seq 1 20); do
+            count=$(docker compose exec -T mysql \
+              mariadb -upiler -ppiler123 piler -N -e \
+              "SELECT COUNT(*) FROM metadata WHERE subject = 'CI spool mail';")
+            if [ "${count}" -eq 20 ]; then
+              echo "all 20 spooled mails survived the recreation and were archived"
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "expected 20 archived mails from the spool, got ${count}" >&2
+          docker compose logs piler >&2
+          exit 1
+
       # Destructive: leaves piler down, so keep it last before teardown.
       - name: exit-on-fatal brings the container down on a FATAL service
         run: |
