@@ -1,0 +1,12 @@
+failure-threshold: warning
+
+ignored:
+  # The base image is a pinned Ubuntu snapshot and Renovate bumps it, so apt
+  # versions are pinned by the snapshot rather than one by one.
+  - DL3008
+  # Every flagged pipe feeds a variable that the next command uses, so a failing
+  # stage yields an empty value and fails the RUN anyway.
+  - DL4006
+  # Only the HEALTHCHECK is shell-form, on purpose: it chains two probes with
+  # `&&`. ENTRYPOINT and CMD are already JSON.
+  - DL3025
