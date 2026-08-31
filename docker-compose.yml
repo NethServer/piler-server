@@ -59,6 +59,9 @@ services:
       - MYSQL_PASSWORD=piler123
       - PILER_HOSTNAME=${ARCHIVE_HOST:-archive.example.com}
       - RT=1
+      # A prefix also needs SITE_URL, BRANDING_LOGO, BRANDING_FAVICON and
+      # SITE_LOGO_LG set in config-site.php; this variable moves none of them.
+      # - PATH_PREFIX=/archive/
       # Left implicit so CI exercises the defaults. Setting one here means
       # moving the service's own listener to match.
       # - MYSQL_PORT=3306
