@@ -472,9 +472,10 @@ jobs:
 
       - name: A rotated database password reaches the daemon and the web UI
         run: |
-          # Both sed delimiters and the replacement ampersand, safe through
-          # YAML, the shell and SQL. Quotes and backslashes are covered offline.
-          new_pass='pW&y%z/1-x'
+          # Both sed delimiters, the replacement ampersand, and '#', which
+          # MariaDB reads as a comment start in .my.cnf. Quotes and backslashes
+          # are covered offline.
+          new_pass='pW&y%z/1-x#tail'
 
           # SET PASSWORD needs no extra privilege; ALTER USER wants CREATE USER.
           docker compose exec -T mysql \
