@@ -387,10 +387,52 @@ else
    ok "a piler.js without location.origin is rejected"
 fi
 
-echo "# a renamed key in the template fails loudly instead of silently"
+echo "# a key missing from the live piler.conf is appended, not fatal"
 
-# Not hypothetical: the first version of this work edited `mysqlpassword=`,
-# which does not exist. The key is `mysqlpwd=`.
+# The live file may come from the config volume or from a downstream module's
+# template, so a key this image drives from the environment can legitimately be
+# absent. sed cannot add a line, which is how RT=1 used to be accepted and then
+# silently dropped on ns8-piler.
+for key in mysqlpwd mysqlhost hostid rtindex pidfile mysqlsocket; do
+   d="$(new_dir)"
+   boot "$d" 'piler123'
+   sed -i "/^${key}=/d" "${d}/piler.conf"
+   # Explicit, so refusing to start is reported as this case failing rather than
+   # killing the suite under errexit with a bare error line.
+   if boot "$d" 'appended-secret' 2> /dev/null; then
+      check_eq "${key} is appended when the live file lacks it" \
+         "1" "$(grep -c "^${key}=" "${d}/piler.conf")"
+   else
+      ko "${key} missing from the live piler.conf refused to start"
+   fi
+done
+
+# Appending has to work on a file that does not end with a newline, or the key
+# joins the last line and neither is parsed.
+d="$(new_dir)"
+boot "$d" 'piler123'
+sed -i '/^rtindex=/d' "${d}/piler.conf"
+printf '%s' "$(cat "${d}/piler.conf")" > "${d}/piler.conf.tmp"
+mv "${d}/piler.conf.tmp" "${d}/piler.conf"
+boot "$d" 'piler123'
+check_eq "rtindex is on its own line after appending to a file with no final newline" \
+   "rtindex=1" "$(grep '^rtindex=' "${d}/piler.conf")"
+
+# A value appended rather than substituted still has to arrive verbatim.
+d="$(new_dir)"
+boot "$d" 'piler123'
+sed -i '/^hostid=/d' "${d}/piler.conf"
+boot "$d" 'piler123' 'PILER_HOSTNAME=x&y/z%w.example.com'
+check_eq "an appended value keeps sed-special characters" \
+   "hostid=x&y/z%w.example.com" "$(grep '^hostid=' "${d}/piler.conf")"
+
+echo "# a key renamed in the shipped template fails loudly instead of silently"
+
+# The rename check runs against the template the image ships, not the live file:
+# that one comes from the same package as the binary, so a missing key there
+# means upstream moved and this image would set a key piler ignores. Not
+# hypothetical - the first version of this work edited `mysqlpassword=`, which
+# does not exist; the key is `mysqlpwd=`.
 for key in mysqlpwd mysqlhost hostid rtindex pidfile; do
    d="$(new_dir)"
    broken="${WORK}/broken-${key}"
@@ -398,9 +440,9 @@ for key in mysqlpwd mysqlhost hostid rtindex pidfile; do
    cp "${TMPL}"/* "${broken}/"
    sed -i "/^${key}=/d" "${broken}/piler.conf.dist"
    if TMPL="$broken" boot "$d" 'piler123' 2> /dev/null; then
-      ko "a piler.conf.dist without ${key}= was accepted"
+      ko "a shipped template without ${key}= was accepted"
    else
-      ok "a piler.conf.dist without ${key}= is rejected"
+      ok "a shipped template without ${key}= is rejected"
    fi
 done
 
