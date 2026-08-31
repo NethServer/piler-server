@@ -59,6 +59,12 @@ services:
       - MYSQL_PASSWORD=piler123
       - PILER_HOSTNAME=${ARCHIVE_HOST:-archive.example.com}
       - RT=1
+      # Left implicit so CI exercises the defaults. Setting one here means
+      # moving the service's own listener to match.
+      # - MYSQL_PORT=3306
+      # - MANTICORE_PORT=9306
+      # - MANTICORE_PORT_READONLY=9307
+      # - MEMCACHED_PORT=11211
     ports:
       - "25:25"
       - "80:80"
