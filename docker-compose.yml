@@ -56,6 +56,8 @@ services:
       - MYSQL_HOSTNAME=mysql
       - MYSQL_DATABASE=piler
       - MYSQL_USER=piler
+      # No '%' in the password: piler's cron scripts parse piler.conf with
+      # configparser, so the nightly purge dies on it (upstream bug).
       - MYSQL_PASSWORD=piler123
       - PILER_HOSTNAME=${ARCHIVE_HOST:-archive.example.com}
       # Optional, shown at their defaults. Uncommenting a port means moving
