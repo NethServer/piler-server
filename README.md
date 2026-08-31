@@ -181,18 +181,24 @@ generated password or an unusual hostname needs no character set restriction.
   | `piler-nginx.conf` | rewritten if absent, or if it has no `listen` directive — an older template left some without one |
   | `piler.key`, `piler.pem` | created only if absent |
 
-  The generated block of `config-site.php` owns these keys, and its values win
-  over anything set above the marker, because PHP keeps the last assignment:
+  The generated block of `config-site.php` owns the keys that follow the
+  environment, and its values win over anything set above the marker because PHP
+  keeps the last assignment:
 
   `DB_HOSTNAME`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`,
-  `SPHINX_HOSTNAME`, `SPHINX_HOSTNAME_READONLY`, `SPHINX_MAIN_INDEX`, `RT`,
-  `MEMCACHED_ENABLED`, `$memcached_server`, `DECRYPT_BINARY`,
-  `DECRYPT_ATTACHMENT_BINARY`, `PILER_BINARY`, `RELOAD_COMMAND`, and
+  `SPHINX_HOSTNAME`, `SPHINX_HOSTNAME_READONLY`, `$memcached_server`, and
   `PATH_PREFIX` when that variable is set.
 
   Set those through the environment variables above, not by editing the file:
-  an edit to one of them is silently replaced on the next start. Every other
-  key is yours.
+  an edit to one of them is silently replaced on the next start.
+
+  These are constants, so they are written only when the file does not already
+  state them — set them by hand and the value stands:
+
+  `RT`, `SPHINX_MAIN_INDEX`, `MEMCACHED_ENABLED`, `DECRYPT_BINARY`,
+  `DECRYPT_ATTACHMENT_BINARY`, `PILER_BINARY`, `RELOAD_COMMAND`.
+
+  Every other key is yours.
 
   The same applies to the `piler.conf` keys in the table: the entrypoint sets
   them from the environment, appending the line when the file does not carry it.
