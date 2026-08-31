@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 
-ARG BASE_IMAGE=ubuntu:resolute-20260610
+ARG BASE_IMAGE=ubuntu:resolute-20260811.1
 ARG PILER_VERSION=1.4.9
 # amd64-only image. sha256 of the amd64 .deb - on a version bump, copy the new
 # asset digest from the release page (each asset shows a sha256):
 #   https://github.com/jsuto/piler/releases  (open the piler-<version> tag)
 ARG PILER_SHA256=e6f9e5e7bf307f024ea248352b93d5cad0925f0f998b2902e0e64ce0db51859a
-ARG SUPERCRONIC_VERSION=v0.2.46
+ARG SUPERCRONIC_VERSION=v0.2.49
 # sha256 of the amd64 binary, from the release page:
 #   https://github.com/aptible/supercronic/releases  (open the <version> tag)
-ARG SUPERCRONIC_SHA256=5adff01c5a797663948e656d2b61d10932369ee437eb5cb54fa872b2960f222b
+ARG SUPERCRONIC_SHA256=a53ae236602c7338aba3fbaff40bda6300eae3b9fedb8261eb06cfe3724430c1
 
 # --- stage: fetcher ---------------------------------------------------------
 FROM ${BASE_IMAGE} AS fetcher
