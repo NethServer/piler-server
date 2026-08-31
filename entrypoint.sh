@@ -197,6 +197,19 @@ fix_configs() {
 
    log "Updating ${CONFIG_SITE_PHP}"
 
+   # Upstream concatenates PATH_PREFIX with relative paths ("assets/js/piler.js")
+   # and ships '/' as the default, so the value needs a leading and a trailing
+   # slash. Normalize both ends so /piler, piler/ and /piler/ all work. The
+   # quotes around it in piler.js belong to the JS syntax, not to the value:
+   # passing them in used to be required there and broke the PHP side.
+   local path_prefix=""
+   if [[ -v PATH_PREFIX ]]; then
+      [[ "$PATH_PREFIX" != *\'* ]] \
+         || error "PATH_PREFIX must not contain a quote, got '${PATH_PREFIX}'; pass a bare path such as /piler/"
+      path_prefix="/${PATH_PREFIX#/}"
+      path_prefix="${path_prefix%/}/"
+   fi
+
    # Drop the previous managed block before rewriting it, so the file does not
    # grow on every start. PHP keeps the last assignment, so these override
    # anything the template set above the marker.
@@ -222,14 +235,17 @@ fix_configs() {
       # sudo/systemctl (which also sidesteps the broken systemctl-probe
       # default, jsuto #479).
       echo "\$config['RELOAD_COMMAND'] = '/etc/init.d/rc.piler reload';"
-      if [[ -v PATH_PREFIX ]]; then
-         echo "\$config['PATH_PREFIX'] = '$(php_single_quoted "$PATH_PREFIX")';"
+      if [[ -n "$path_prefix" ]]; then
+         echo "\$config['PATH_PREFIX'] = '$(php_single_quoted "$path_prefix")';"
       fi
    } >> "$CONFIG_SITE_PHP"
 
-   if [[ -v PATH_PREFIX ]]; then
-      log "PATH_PREFIX set $PATH_PREFIX"
-      safe_sed "$PILER_JS" -e "s#location.origin\ +\ .*#location.origin\ +\ $(sed_replacement '#' "$PATH_PREFIX"),#"
+   if [[ -n "$path_prefix" ]]; then
+      log "PATH_PREFIX normalized to ${path_prefix}"
+      grep -q 'location\.origin' "$PILER_JS" \
+         || error "no location.origin line in ${PILER_JS}, cannot apply PATH_PREFIX"
+      safe_sed "$PILER_JS" \
+         -e "s#location.origin + .*#location.origin + '$(sed_replacement '#' "$path_prefix")',#"
    fi
 
    # Both files carry the DB password in plaintext; lock them to piler:piler

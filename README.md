@@ -135,8 +135,10 @@ Optional:
   image only supports RT mode: manticore runs as a separate container and no
   local `indexer` binary is shipped, so batch indexing (`RT=0`) cannot build
   or rotate indexes. The entrypoint rejects any value other than `1`.
-- `PATH_PREFIX` — set if piler's web UI is served behind a reverse-proxy
-  path prefix.
+- `PATH_PREFIX` — set if piler's web UI is served behind a reverse-proxy path
+  prefix. Give a bare path, no quotes: `/archive`, `archive/` and `/archive/`
+  all end up as `/archive/`, which is the form upstream concatenates with
+  relative asset paths. A value containing a quote is rejected.
 - `ADMIN_USER_PASSWORD_HASH` — if set, overwrites the built-in admin
   account's password hash at database init time.
 - `MANTICORE_HOSTNAME` (default `manticore`), `MEMCACHED_HOSTNAME` (default

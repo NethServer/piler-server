@@ -104,8 +104,12 @@ boot() {
    local config_dir="$1" password="$2"
    shift 2
 
+   # Mirrors the shipped asset: "    base_url: location.origin + '/',".
+   # KEEP_JS=1 leaves whatever the caller put there, to test a broken asset.
    local js="${config_dir}/piler.js"
-   printf 'var base = location.origin + "",\n' > "$js"
+   if [[ "${KEEP_JS:-0}" != 1 ]]; then
+      printf "    base_url: location.origin + '/',\n" > "$js"
+   fi
 
    (
       export CONFIG_DIR="$config_dir" TMP_CONF_DIR="$TMPL" PILER_JS="$js"
@@ -223,12 +227,50 @@ fi
 
 echo "# PATH_PREFIX reaches both the PHP config and the JS asset"
 
+# Upstream concatenates it with relative paths and defaults to '/', so the value
+# has to end up as /archive/ on both sides - quoted in the JS, bare in the PHP.
+# Getting that split wrong is silent: the JS becomes a syntax error, or the PHP
+# does, depending on which side the quotes were passed for.
+for given in '/archive' 'archive/' '/archive/'; do
+   d="$(new_dir)"
+   boot "$d" 'piler123' "PATH_PREFIX=${given}"
+   check_file_has "PATH_PREFIX=${given} normalizes in config-site.php" \
+      "${d}/config-site.php" "\$config['PATH_PREFIX'] = '/archive/';"
+   check_file_has "PATH_PREFIX=${given} normalizes in piler.js" \
+      "${d}/piler.js" "location.origin + '/archive/',"
+   check_file_has "PATH_PREFIX=${given} keeps the JS line prefix" \
+      "${d}/piler.js" "base_url: location.origin"
+done
+
 d="$(new_dir)"
-boot "$d" 'piler123' 'PATH_PREFIX=/archive'
-check_file_has "PATH_PREFIX lands in config-site.php" \
-   "${d}/config-site.php" "\$config['PATH_PREFIX'] = '/archive';"
-check_file_has "PATH_PREFIX lands in piler.js" \
-   "${d}/piler.js" "location.origin + /archive,"
+boot "$d" 'piler123' 'PATH_PREFIX=/'
+check_file_has "PATH_PREFIX=/ stays /" \
+   "${d}/config-site.php" "\$config['PATH_PREFIX'] = '/';"
+
+d="$(new_dir)"
+boot "$d" 'piler123'
+check_eq "no PATH_PREFIX leaves the JS asset alone" \
+   "    base_url: location.origin + '/'," "$(cat "${d}/piler.js")"
+check_eq "no PATH_PREFIX writes no PHP key" \
+   "0" "$(grep -cF "PATH_PREFIX" "${d}/config-site.php")"
+
+# The old JS sed needed the quotes passed in, which broke the PHP side. Reject
+# them with a message instead of writing one broken file or the other.
+d="$(new_dir)"
+if boot "$d" 'piler123' "PATH_PREFIX='/archive/'" 2> /dev/null; then
+   ko "a quoted PATH_PREFIX was accepted"
+else
+   ok "a quoted PATH_PREFIX is rejected"
+fi
+
+d="$(new_dir)"
+boot "$d" 'piler123'
+: > "${d}/piler.js"
+if KEEP_JS=1 boot "$d" 'piler123' 'PATH_PREFIX=/archive' 2> /dev/null; then
+   ko "a piler.js without location.origin was accepted"
+else
+   ok "a piler.js without location.origin is rejected"
+fi
 
 echo "# a renamed key in the template fails loudly instead of silently"
 
