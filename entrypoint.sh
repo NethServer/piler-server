@@ -17,7 +17,6 @@ PILER_CONF="${CONFIG_DIR}/piler.conf"
 PILER_KEY="${CONFIG_DIR}/piler.key"
 PILER_PEM="${CONFIG_DIR}/piler.pem"
 PILER_NGINX_CONF="${CONFIG_DIR}/piler-nginx.conf"
-SPHINX_CONF="${CONFIG_DIR}/manticore.conf"
 CONFIG_SITE_PHP="${CONFIG_DIR}/config-site.php"
 PILER_MY_CNF="${CONFIG_DIR}/.my.cnf"
 RT="${RT:-1}"
@@ -147,12 +146,6 @@ fix_configs() {
    [[ -f "$PILER_KEY" ]] || make_piler_key "$PILER_KEY"
    [[ -f "$PILER_PEM" ]] || make_certificate "$PILER_PEM"
 
-   [[ -f "${CONFIG_DIR}/MANTICORE" ]] || touch "${CONFIG_DIR}/MANTICORE"
-
-   # Templates always come from TMP_CONF_DIR, never from the config volume
-   # itself, or a stale one would never pick up an image update.
-   [[ -f "$SPHINX_CONF" ]] || cp "${TMP_CONF_DIR}/manticore.conf" "$SPHINX_CONF"
-
    # Also regenerate if an older template left it without a listen directive.
    if [[ ! -f "$PILER_NGINX_CONF" ]] || ! grep -q '^\s*listen\s' "$PILER_NGINX_CONF"; then
       write_piler_nginx_conf
@@ -164,10 +157,9 @@ fix_configs() {
 
    log "Updating ${PILER_CONF}"
 
-   # The password may contain sed-special characters; escape it per delimiter.
-   local mysql_pass_slash mysql_pass_pct
+   # The password may contain sed-special characters; escape it for the delimiter.
+   local mysql_pass_slash
    mysql_pass_slash="$(sed_replacement / "$MYSQL_PASSWORD")"
-   mysql_pass_pct="$(sed_replacement % "$MYSQL_PASSWORD")"
 
    # Matched by key, not by the template's placeholder value: that is gone after
    # the first start. A sed matching nothing is indistinguishable from a no-op,
@@ -205,12 +197,6 @@ fix_configs() {
          printf '\n' >> "$CONFIG_SITE_PHP"
       fi
    fi
-
-   safe_sed "$SPHINX_CONF" \
-      -e "s%MYSQL_HOSTNAME%${MYSQL_HOSTNAME}%" \
-      -e "s%MYSQL_DATABASE%${MYSQL_DATABASE}%" \
-      -e "s%MYSQL_USERNAME%${MYSQL_USER}%" \
-      -e "s%MYSQL_PASSWORD%${mysql_pass_pct}%"
 
    log "Updating ${CONFIG_SITE_PHP}"
 
@@ -262,10 +248,9 @@ fix_configs() {
          -e "s#location.origin + .*#location.origin + '$(sed_replacement '#' "$path_prefix")',#"
    fi
 
-   # Both files carry the DB password in plaintext; lock them to piler:piler
-   # 600 like piler.conf and .my.cnf, instead of leaving template permissions.
+   # It carries the DB password in plaintext; lock it to piler:piler 600 like
+   # piler.conf and .my.cnf, instead of leaving the template's permissions.
    give_it_to_piler "$CONFIG_SITE_PHP"
-   give_it_to_piler "$SPHINX_CONF"
 }
 
 wait_until_mysql_server_is_ready() {
