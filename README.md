@@ -255,6 +255,11 @@ a deployment that sets one keeps it:
 constraint rather than a preference, which is why `pre_flight_check` refuses
 anything else.
 
+`SPHINX_MAIN_INDEX` names the index the UI searches; the daemon reads that name
+from `sphxdb`, and Manticore defines it in its own config. Rename in all three
+or it fails silently — a mismatch empties search, and an index Manticore does
+not define makes piler accept mail over SMTP and never archive it.
+
 Every other key is yours. The same holds for `piler.conf`: a file supplied by a
 volume or a downstream module needs to list only what it actually decides.
 
