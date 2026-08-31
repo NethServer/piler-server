@@ -1,0 +1,64 @@
+name: lint
+
+# Needs no registry credentials and no build, so it runs on fork PRs too.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: {}
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: |
+          docker run --rm -v "${PWD}:/mnt" -w /mnt koalaman/shellcheck:stable \
+            --severity=warning \
+            entrypoint.sh \
+            build-images.sh \
+            release-tag.sh \
+            dockerfile-vars.sh \
+            config/piler-run.sh \
+            tests/entrypoint-config-test.sh
+
+  hadolint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: hadolint
+        run: |
+          docker run --rm -i -v "${PWD}/.hadolint.yaml:/.hadolint.yaml" \
+            hadolint/hadolint hadolint --no-color - < Dockerfile
+
+  entrypoint-config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # The PHP assertions are the point of this job.
+      - name: Check php is available
+        run: php --version
+
+      - name: Config generation tests
+        run: tests/entrypoint-config-test.sh
