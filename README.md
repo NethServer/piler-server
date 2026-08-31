@@ -173,7 +173,10 @@ implying it.
 
 `MANTICORE_PORT` covers both consumers, `sphxport` for the daemon and
 `SPHINX_HOSTNAME` for the UI, so they cannot drift. Any port that is not a
-number aborts the start rather than leaving a config that never connects.
+number aborts the start rather than leaving a config that never connects. It
+says where to *reach* manticore, not where manticore listens: change
+[config/manticore.conf](config/manticore.conf)'s `listen` lines and this
+variable has to follow, or search stops working.
 
 `PILER_USER` is only worth overriding against an image whose uid/gid layout
 differs.
