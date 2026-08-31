@@ -181,11 +181,16 @@ An IPv6 literal in `MYSQL_HOSTNAME` is bracketed before the port is appended,
 `.my.cnf` keep host and port apart, so they take it bare.
 
 `MANTICORE_PORT` covers both consumers, `sphxport` for the daemon and
-`SPHINX_HOSTNAME` for the UI, so they cannot drift. Any port that is not a
-number aborts the start rather than leaving a config that never connects. It
-says where to *reach* manticore, not where manticore listens: change
-[config/manticore.conf](config/manticore.conf)'s `listen` lines and this
-variable has to follow, or search stops working.
+`SPHINX_HOSTNAME` for the UI. That is the point: these variables are the only way
+to move manticore, because the daemon's coordinates live in `piler.conf` and no
+amount of editing `config-site.php` reaches them. Setting `SPHINX_HOSTNAME` by
+hand would move the UI alone — searching one index while the daemon keeps writing
+to another — which is why the entrypoint overwrites it.
+
+It says where to *reach* manticore, not where manticore listens: change
+[config/manticore.conf](config/manticore.conf)'s `listen` lines and this variable
+has to follow, or search stops working. Any port that is not a number aborts the
+start rather than leaving a config that never connects.
 
 `PILER_USER` is only worth overriding against an image whose uid/gid layout
 differs.
