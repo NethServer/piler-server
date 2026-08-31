@@ -1,7 +1,6 @@
 name: lint
 
-# Static checks and the offline entrypoint tests. Runs on every push and PR,
-# including forks, because nothing here needs registry credentials or a build.
+# Needs no registry credentials and no build, so it runs on fork PRs too.
 on:
   push:
     branches: [main]
@@ -25,7 +24,6 @@ jobs:
 
       - name: shellcheck
         run: |
-          # config/piler-run.sh is POSIX sh; shellcheck reads each shebang.
           docker run --rm -v "${PWD}:/mnt" -w /mnt koalaman/shellcheck:stable \
             --severity=warning \
             entrypoint.sh \
@@ -58,8 +56,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # The PHP assertions are the point of this job: they are what proves a
-      # password with a quote in it lands in config-site.php as data.
+      # The PHP assertions are the point of this job.
       - name: Check php is available
         run: php --version
 

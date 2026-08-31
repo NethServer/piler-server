@@ -425,9 +425,8 @@ jobs:
 
       - name: Restarting neither grows nor breaks config-site.php
         run: |
-          # The generated block is deleted and rewritten on every start. If the
-          # delete ever stops matching, the file grows without bound and the
-          # duplicate assignments hide which one PHP actually uses.
+          # If the delete ever stops matching, the file grows and duplicate
+          # assignments hide which one PHP uses.
           php_lint() {
             docker compose exec -T piler php -l /etc/piler/config-site.php
           }
@@ -473,15 +472,11 @@ jobs:
 
       - name: A rotated database password reaches the daemon and the web UI
         run: |
-          # Characters that are special to the sed edits (both delimiters and
-          # the replacement ampersand) but safe through YAML, the shell and SQL.
-          # The quote/backslash cases live in tests/entrypoint-config-test.sh,
-          # which reads the value back through PHP itself.
+          # Both sed delimiters and the replacement ampersand, safe through
+          # YAML, the shell and SQL. Quotes and backslashes are covered offline.
           new_pass='pW&y%z/1-x'
 
-          # SET PASSWORD lets the account change its own password with no extra
-          # privilege, which avoids needing the random root one. ALTER USER would
-          # want CREATE USER.
+          # SET PASSWORD needs no extra privilege; ALTER USER wants CREATE USER.
           docker compose exec -T mysql \
             mariadb -upiler -ppiler123 -e \
             "SET PASSWORD = PASSWORD('${new_pass}')"
@@ -504,8 +499,7 @@ jobs:
             sleep 2
           done
 
-          # The UI reads config-site.php, the archiver reads piler.conf. Both
-          # have to have picked the new password up, so check both.
+          # The UI reads config-site.php, the archiver piler.conf: check both.
           headers=$(curl -sS -D - -o /dev/null \
             --data-urlencode "username=admin@local" \
             --data-urlencode "password=pilerrocks" \
@@ -546,8 +540,7 @@ jobs:
           fi
           echo "archiver OK after the rotation"
 
-          # Put the demo password back: the steps after this one, and the
-          # teardown, expect it.
+          # The later steps and the teardown expect the demo password.
           docker compose exec -T mysql \
             mariadb -upiler -p"${new_pass}" -e \
             "SET PASSWORD = PASSWORD('piler123')"

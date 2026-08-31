@@ -1,9 +1,7 @@
 #!/bin/bash
 #
-# Offline tests for entrypoint.sh's config generation. No container, no
-# database: fix_configs() is driven directly against a throwaway CONFIG_DIR,
-# which is what makes the password-rotation and escaping cases cheap enough to
-# run on every push.
+# Offline tests for entrypoint.sh's config generation: fix_configs() driven
+# against a throwaway CONFIG_DIR, no container and no database.
 #
 set -o errexit
 set -o pipefail
@@ -12,14 +10,13 @@ set -o nounset
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENTRYPOINT="${HERE}/../entrypoint.sh"
 
-# Second entry point: one boot of fix_configs, in its own process, so each case
-# gets the same fresh-environment semantics a real container start has.
+# One boot, in its own process, so each case starts as a container start does.
 if [[ "${1:-}" == "--boot" ]]; then
    # shellcheck source=../entrypoint.sh
    source "$ENTRYPOINT"
 
-   # chown needs root and says nothing about the logic under test; keep the
-   # chmod so the permission assertions below stay meaningful.
+   # chown needs root; the chmod stays so the mode assertions still mean
+   # something.
    give_it_to_piler() {
       [[ -f "$1" ]] || error "${1} does not exist, aborting"
       chmod 600 "$1"
@@ -58,11 +55,10 @@ trap 'rm -rf "$WORK"' EXIT
 TMPL="${WORK}/templates"
 mkdir -p "$TMPL"
 
-# Stand-ins for the .dist files the image ships in /tmp/piler-conf. The key
-# names here must match the shipped template exactly - that is the whole point
-# of the last case below. Cross-check against the image with:
+# Stand-ins for the .dist files the image ships. The key names must match the
+# shipped template exactly; cross-check with:
 #   podman run --rm --entrypoint /bin/sh <image> \
-#     -c 'grep -E "^(mysql|hostid|tls_enable|sphxhost|rtindex|pidfile)" \
+#     -c 'grep -E "^(mysql|hostid|tls_enable|sphxhost|rtindex)" \
 #         /tmp/piler-conf/piler.conf.dist'
 cat > "${TMPL}/piler.conf.dist" <<'EOF'
 [piler]
@@ -80,8 +76,8 @@ rtindex=0
 pidfile=/var/run/piler/piler.pid
 EOF
 
-# Deliberately without a trailing newline: the shipped template has none, and
-# that is what would swallow the marker line.
+# No trailing newline, like the shipped template: that is what swallows the
+# marker line.
 printf '<?php\n$config = [];' > "${TMPL}/config-site.dist.php"
 
 cat > "${TMPL}/manticore.conf" <<'EOF'
@@ -129,8 +125,7 @@ new_dir() {
    printf '%s' "$d"
 }
 
-# Read one $config key back through PHP itself, which is the only thing that
-# can tell us the escaping produced the intended value rather than a lookalike.
+# Only PHP itself can tell the intended value from a convincing lookalike.
 php_value() {
    php -r 'include $argv[1]; echo $config[$argv[2]];' "$1" "$2"
 }
@@ -179,8 +174,7 @@ echo "# repeated boots neither grow the file nor lose hand edits"
 
 d="$(new_dir)"
 boot "$d" 'piler123'
-# A hand edit above the marker must survive; one below it is by contract not
-# preserved, which is what the marker text tells the reader.
+# Above the marker must survive; below it is not preserved, by contract.
 sed -i "1a \$config['LANG'] = 'fr';" "${d}/config-site.php"
 lines="$(wc -l < "${d}/config-site.php")"
 for _ in 1 2 3; do boot "$d" 'piler123'; done
@@ -193,8 +187,8 @@ check_file_has "the hand edit above the marker survived" \
 
 echo "# values that are special in PHP or sed are escaped, not injected"
 
-# Backslash, single quote, ampersand, both sed delimiters used by the script,
-# and a PHP snippet that would execute if the quoting broke.
+# Both sed delimiters, the replacement ampersand, and PHP that would run if the
+# quoting broke.
 tricky="a'b&c/d%e\\f\"g\$h"
 d="$(new_dir)"
 boot "$d" "$tricky"
@@ -227,10 +221,7 @@ fi
 
 echo "# PATH_PREFIX reaches both the PHP config and the JS asset"
 
-# Upstream concatenates it with relative paths and defaults to '/', so the value
-# has to end up as /archive/ on both sides - quoted in the JS, bare in the PHP.
-# Getting that split wrong is silent: the JS becomes a syntax error, or the PHP
-# does, depending on which side the quotes were passed for.
+# Has to end up /archive/ on both sides: quoted in the JS, bare in the PHP.
 for given in '/archive' 'archive/' '/archive/'; do
    d="$(new_dir)"
    boot "$d" 'piler123' "PATH_PREFIX=${given}"
@@ -254,8 +245,7 @@ check_eq "no PATH_PREFIX leaves the JS asset alone" \
 check_eq "no PATH_PREFIX writes no PHP key" \
    "0" "$(grep -cF "PATH_PREFIX" "${d}/config-site.php")"
 
-# The old JS sed needed the quotes passed in, which broke the PHP side. Reject
-# them with a message instead of writing one broken file or the other.
+# The old JS sed needed the quotes passed in; someone may still be doing it.
 d="$(new_dir)"
 if boot "$d" 'piler123' "PATH_PREFIX='/archive/'" 2> /dev/null; then
    ko "a quoted PATH_PREFIX was accepted"
@@ -274,10 +264,8 @@ fi
 
 echo "# a renamed key in the template fails loudly instead of silently"
 
-# Every key the sed edits is checked, because a no-op sed leaves a stale
-# password or hostname behind and says nothing. This is not hypothetical: the
-# first version of this change edited `mysqlpassword=`, which does not exist -
-# the key is `mysqlpwd=`.
+# Not hypothetical: the first version of this work edited `mysqlpassword=`,
+# which does not exist. The key is `mysqlpwd=`.
 for key in mysqlpwd mysqlhost hostid rtindex pidfile; do
    d="$(new_dir)"
    broken="${WORK}/broken-${key}"
