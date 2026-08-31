@@ -24,7 +24,9 @@ if [[ "${1:-}" == "--boot" ]]; then
    # A 4096-bit key per boot would dominate the runtime.
    make_certificate() { : > "$1"; }
 
+   # Both write files and need no database, unlike init_database.
    fix_configs
+   create_my_cnf_files
    exit 0
 fi
 
@@ -80,14 +82,6 @@ EOF
 # marker line.
 printf '<?php\n$config = [];' > "${TMPL}/config-site.dist.php"
 
-cat > "${TMPL}/manticore.conf" <<'EOF'
-index piler1
-{
-    type = rt
-    path = /var/lib/manticore/piler1
-}
-EOF
-
 cat > "${TMPL}/piler-nginx.conf.dist" <<'EOF'
 server {
     listen 80;
@@ -129,6 +123,60 @@ new_dir() {
 php_value() {
    php -r 'include $argv[1]; echo $config[$argv[2]];' "$1" "$2"
 }
+
+# The escapers are pure functions, so drive them directly instead of only
+# through their output files: a table says exactly what each grammar needs.
+escaper_out() {
+   local fn="$1"
+   shift
+   (
+      # shellcheck source=../entrypoint.sh
+      source "$ENTRYPOINT"
+      "$fn" "$@"
+   )
+}
+
+check_escaper() {
+   local fn="$1" input="$2" want="$3"
+   shift 3
+   check_eq "${fn} $(printf '%q' "$input")" "$want" "$(escaper_out "$fn" "$@" "$input")"
+}
+
+echo "# each escaper matches its destination grammar"
+
+# PHP single-quoted: only backslash and quote are special.
+check_escaper php_single_quoted "plain"    "plain"
+check_escaper php_single_quoted "a'b"      "a\\'b"
+check_escaper php_single_quoted 'a\b'      'a\\b'
+check_escaper php_single_quoted 'a#b"c$d'  'a#b"c$d'
+# An already-escaped value must be escaped again, not passed through: the
+# escaper is applied once, at the point of writing, and nowhere else.
+check_escaper php_single_quoted "a\\'b"    "a\\\\\\'b"
+
+# MariaDB option file: always quoted, because unquoted a '#' starts a comment
+# and a trailing space is trimmed. Verified against mariadb:12.0.2.
+check_escaper my_cnf_value "plain"   '"plain"'
+check_escaper my_cnf_value "a#b"     '"a#b"'
+check_escaper my_cnf_value "ab "     '"ab "'
+check_escaper my_cnf_value 'a\b'     '"a\\b"'
+check_escaper my_cnf_value 'a"b'     '"a\"b"'
+check_escaper my_cnf_value "a'b"     '"a'"'"'b"'
+
+# SQL literal: MariaDB interprets backslash inside literals, so doubling the
+# quote alone silently stores a different value.
+check_escaper sql_literal "plain"  "plain"
+check_escaper sql_literal "a'b"    "a''b"
+check_escaper sql_literal 'a\b'    'a\\b'
+check_escaper sql_literal '$2y$10$x\y'  '$2y$10$x\\y'
+
+# sed replacement text: backslash, ampersand and the delimiter in use. The
+# ampersand is the dangerous one - sed replaces it with the whole match.
+check_escaper sed_replacement "plain"  "plain"  /
+check_escaper sed_replacement "a&b"    'a\&b'   /
+check_escaper sed_replacement "a/b"    'a\/b'   /
+check_escaper sed_replacement "a/b"    "a/b"    %
+check_escaper sed_replacement "a%b"    'a\%b'   %
+check_escaper sed_replacement 'a\b'    'a\\b'   /
 
 echo "# a first boot writes the generated config"
 
@@ -218,6 +266,83 @@ if command -v php > /dev/null; then
 else
    echo "skip PHP assertions: no php binary"
 fi
+
+echo "# .my.cnf quotes what MariaDB would otherwise truncate"
+
+# Unquoted, the '#' starts a comment and the trailing space is trimmed, so the
+# client is denied and the entrypoint never reaches the database.
+d="$(new_dir)"
+boot "$d" 'pw#with space '
+check_eq ".my.cnf quotes the password in [client]" \
+   'password = "pw#with space "' "$(grep -m1 '^password' "${d}/.my.cnf")"
+check_eq "both sections are present" \
+   "2" "$(grep -c '^password' "${d}/.my.cnf")"
+check_eq ".my.cnf is owner-only" "600" "$(stat -c '%a' "${d}/.my.cnf")"
+
+d="$(new_dir)"
+boot "$d" 'a\b"c'
+check_eq ".my.cnf escapes backslash and quote" \
+   'password = "a\\b\"c"' "$(grep -m1 '^password' "${d}/.my.cnf")"
+
+echo "# nothing manticore-related is written any more"
+
+d="$(new_dir)"
+boot "$d" 'piler123'
+check_eq "no manticore.conf in the config dir" \
+   "" "$(find "$d" -name 'manticore.conf' -printf '%f\n')"
+check_eq "no MANTICORE marker" \
+   "" "$(find "$d" -name 'MANTICORE' -printf '%f\n')"
+check_eq "no sql_ credentials leaked anywhere" \
+   "0" "$(grep -rlE '^[[:space:]]*sql_(host|db|user|pass)' "$d" 2>/dev/null | wc -l)"
+
+echo "# every interpolated value survives sed-special characters"
+
+# Two distinct failure modes, so two cases. An unescaped '&' corrupts silently:
+# sed replaces it with the whole match, leaving something that still reads like
+# a hostname. An unescaped delimiter instead ends the expression and sed errors
+# out, which aborts the start - detectable, but only if the check does not
+# assume the boot succeeded.
+echo "#   an ampersand alone corrupts silently"
+
+d="$(new_dir)"
+boot "$d" 'piler123' 'PILER_HOSTNAME=piler-x&y.example.com' 'MYSQL_USER=user-a&b'
+check_eq "hostid survives an ampersand" \
+   "hostid=piler-x&y.example.com" "$(grep '^hostid=' "${d}/piler.conf")"
+check_eq "mysqluser survives an ampersand" \
+   "mysqluser=user-a&b" "$(grep '^mysqluser=' "${d}/piler.conf")"
+
+echo "#   a delimiter alone breaks the expression"
+
+hostile='x&y/z%w'
+d="$(new_dir)"
+if ! boot "$d" 'piler123' \
+   "PILER_HOSTNAME=piler-${hostile}.example.com" \
+   "MYSQL_HOSTNAME=host-${hostile}" \
+   "MYSQL_USER=user-${hostile}" \
+   "MYSQL_DATABASE=db-${hostile}" \
+   "MANTICORE_HOSTNAME=search-${hostile}" 2> /dev/null; then
+   ko "a boot with both sed delimiters in every value failed"
+else
+   ok "a boot with both sed delimiters in every value succeeds"
+fi
+check_eq "hostid keeps the hostname verbatim" \
+   "hostid=piler-${hostile}.example.com" "$(grep '^hostid=' "${d}/piler.conf")"
+check_eq "mysqlhost keeps the value verbatim" \
+   "mysqlhost=host-${hostile}" "$(grep '^mysqlhost=' "${d}/piler.conf")"
+check_eq "mysqluser keeps the value verbatim" \
+   "mysqluser=user-${hostile}" "$(grep '^mysqluser=' "${d}/piler.conf")"
+check_eq "mysqldb keeps the value verbatim" \
+   "mysqldb=db-${hostile}" "$(grep '^mysqldb=' "${d}/piler.conf")"
+check_eq "sphxhost keeps the value verbatim" \
+   "sphxhost=search-${hostile}" "$(grep '^sphxhost=' "${d}/piler.conf")"
+check_eq "pidfile is still set, now through the escaped path" \
+   "pidfile=/var/piler/run/piler.pid" "$(grep '^pidfile=' "${d}/piler.conf")"
+check_file_has "the nginx vhost keeps the hostname verbatim" \
+   "${d}/piler-nginx.conf" "server_name piler-${hostile}.example.com;"
+check_file_has "config-site.php keeps the hostnames verbatim" \
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'host-${hostile}';"
+check_file_has "SPHINX_HOSTNAME keeps the value verbatim" \
+   "${d}/config-site.php" "\$config['SPHINX_HOSTNAME'] = 'search-${hostile}:9306';"
 
 echo "# PATH_PREFIX reaches both the PHP config and the JS asset"
 
