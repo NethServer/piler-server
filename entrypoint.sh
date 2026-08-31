@@ -21,8 +21,7 @@ CONFIG_SITE_PHP="${CONFIG_DIR}/config-site.php"
 PILER_MY_CNF="${CONFIG_DIR}/.my.cnf"
 RT="${RT:-1}"
 MEMCACHED_HOSTNAME="${MEMCACHED_HOSTNAME:-memcached}"
-# Empty means the client library decides, which is what piler ships.
-MYSQL_PORT="${MYSQL_PORT:-}"
+MYSQL_PORT="${MYSQL_PORT:-3306}"
 MANTICORE_HOSTNAME="${MANTICORE_HOSTNAME:-manticore}"
 # Manticore's SQL port is its own default; the read-only one is piler's
 # convention. Both consumers, the daemon and the UI, follow MANTICORE_PORT.
@@ -126,9 +125,7 @@ pre_flight_check() {
    # Real-time indexing only: manticore runs in a separate container with no
    # local `indexer`, so batch mode (RT=0) can't build or rotate indexes here.
    local port
-   [[ -z "$MYSQL_PORT" || "$MYSQL_PORT" =~ ^[1-9][0-9]{0,4}$ ]] \
-      || error "MYSQL_PORT must be a port number or empty, got '${MYSQL_PORT}'"
-   for port in MANTICORE_PORT MANTICORE_PORT_READONLY MEMCACHED_PORT; do
+   for port in MYSQL_PORT MANTICORE_PORT MANTICORE_PORT_READONLY MEMCACHED_PORT; do
       [[ "${!port}" =~ ^[1-9][0-9]{0,4}$ ]] \
          || error "${port} must be a port number, got '${!port}'"
    done
@@ -201,7 +198,7 @@ fix_configs() {
    done
 
    conf_set "$PILER_CONF" mysqlhost "$MYSQL_HOSTNAME"
-   conf_set "$PILER_CONF" mysqlport "${MYSQL_PORT:-0}"
+   conf_set "$PILER_CONF" mysqlport "$MYSQL_PORT"
    conf_set "$PILER_CONF" mysqluser "$MYSQL_USER"
    conf_set "$PILER_CONF" mysqldb "$MYSQL_DATABASE"
    conf_set "$PILER_CONF" mysqlpwd "$MYSQL_PASSWORD"
@@ -231,9 +228,8 @@ fix_configs() {
    log "Updating ${CONFIG_SITE_PHP}"
 
    # piler's PHP builds its DSN without a port field, but PDO parses host:port,
-   # so that is how the web UI reaches a database listening elsewhere.
-   local db_host="$MYSQL_HOSTNAME"
-   [[ -z "$MYSQL_PORT" ]] || db_host="${MYSQL_HOSTNAME}:${MYSQL_PORT}"
+   # so that is how the web UI reaches the database on any port at all.
+   local db_host="${MYSQL_HOSTNAME}:${MYSQL_PORT}"
 
    # Upstream concatenates it with relative paths and defaults to '/', so it
    # needs both slashes. The quotes in piler.js are JS syntax, not part of the
@@ -347,11 +343,8 @@ create_my_cnf_files() {
    user="$(my_cnf_value "$MYSQL_USER")"
    pass="$(my_cnf_value "$MYSQL_PASSWORD")"
 
-   local port_line=""
-   [[ -z "$MYSQL_PORT" ]] || port_line="port = ${MYSQL_PORT}\n"
-
-   printf "[client]\nhost = %s\n%buser = %s\npassword = %s\nssl = false\n[mysqldump]\nhost = %s\n%buser = %s\npassword = %s\nssl = false\n" \
-      "$host" "$port_line" "$user" "$pass" "$host" "$port_line" "$user" "$pass" \
+   printf "[client]\nhost = %s\nport = %s\nuser = %s\npassword = %s\nssl = false\n[mysqldump]\nhost = %s\nport = %s\nuser = %s\npassword = %s\nssl = false\n" \
+      "$host" "$MYSQL_PORT" "$user" "$pass" "$host" "$MYSQL_PORT" "$user" "$pass" \
       > "$PILER_MY_CNF"
 
    give_it_to_piler "$PILER_MY_CNF"

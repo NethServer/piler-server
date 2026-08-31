@@ -312,7 +312,7 @@ for k in RELOAD_COMMAND SPHINX_MAIN_INDEX MEMCACHED_ENABLED; do
 done
 
 check_file_has "DB_HOSTNAME still follows the environment" \
-   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql';"
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql:3306';"
 check_file_has "the rotated password still reaches the UI" \
    "${d}/config-site.php" "\$config['DB_PASSWORD'] = 'rotated-secret';"
 check_file_has "SPHINX_HOSTNAME still follows the environment" \
@@ -324,7 +324,7 @@ if command -v php > /dev/null; then
    check_eq "PHP sees the deployment's SPHINX_MAIN_INDEX" \
       "custom_index" "$(php_value "${d}/config-site.php" SPHINX_MAIN_INDEX)"
    check_eq "PHP sees the environment's DB_HOSTNAME, not the stale one" \
-      "mysql" "$(php_value "${d}/config-site.php" DB_HOSTNAME)"
+      "mysql:3306" "$(php_value "${d}/config-site.php" DB_HOSTNAME)"
    check_eq "PHP sees the rotated password" \
       "rotated-secret" "$(php_value "${d}/config-site.php" DB_PASSWORD)"
 fi
@@ -346,14 +346,14 @@ echo "# a database on a non-standard port reaches all three consumers"
 # and its own line in the MariaDB option file.
 d="$(new_dir)"
 boot "$d" 'piler123'
-# The shipped dist has no mysqlport, piler defaulting it to 0, so this is the
-# append path and mysqlport must stay out of the upstream-rename check.
-check_eq "mysqlport is appended as 0, matching what piler defaults to" \
-   "mysqlport=0" "$(grep '^mysqlport=' "${d}/piler.conf")"
-check_file_has "DB_HOSTNAME carries no port by default" \
-   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql';"
-check_eq "no port line in .my.cnf by default" \
-   "0" "$(grep -c '^port' "${d}/.my.cnf")"
+# The shipped dist has no mysqlport, so this is the append path and mysqlport
+# must stay out of the upstream-rename check.
+check_eq "mysqlport is appended with the default port" \
+   "mysqlport=3306" "$(grep '^mysqlport=' "${d}/piler.conf")"
+check_file_has "DB_HOSTNAME carries the port explicitly" \
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql:3306';"
+check_eq "both .my.cnf sections carry the port" \
+   "2" "$(grep -c '^port = 3306$' "${d}/.my.cnf")"
 
 d="$(new_dir)"
 boot "$d" 'piler123' 'MYSQL_PORT=3307'
@@ -478,7 +478,7 @@ check_eq "pidfile is still set, now through the escaped path" \
 check_file_has "the nginx vhost keeps the hostname verbatim" \
    "${d}/piler-nginx.conf" "server_name piler-${hostile}.example.com;"
 check_file_has "config-site.php keeps the hostnames verbatim" \
-   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'host-${hostile}';"
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'host-${hostile}:3306';"
 check_file_has "SPHINX_HOSTNAME keeps the value verbatim" \
    "${d}/config-site.php" "\$config['SPHINX_HOSTNAME'] = 'search-${hostile}:9306';"
 

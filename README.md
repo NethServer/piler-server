@@ -147,7 +147,7 @@ Optional:
 | `RT` | `1` | Real-time indexing. Must be `1`; any other value aborts the start |
 | `PATH_PREFIX` | *unset* | Path prefix when the UI is behind a reverse proxy |
 | `ADMIN_USER_PASSWORD_HASH` | *unset* | Overwrites the built-in admin's hash at schema creation |
-| `MYSQL_PORT` | *unset* | Database port. Unset leaves it to the client library |
+| `MYSQL_PORT` | `3306` | Database port — MariaDB's own default |
 | `MANTICORE_HOSTNAME` | `manticore` | Manticore host |
 | `MANTICORE_PORT` | `9306` | Manticore's SQL port — its own default |
 | `MANTICORE_PORT_READONLY` | `9307` | Manticore's `mysql_readonly` port — piler's convention |
@@ -166,10 +166,11 @@ Four of those need a word more than a table cell holds.
 relative asset paths. A value containing a quote is rejected.
 
 `MYSQL_PORT` reaches three consumers in three grammars — `mysqlport` in
-`piler.conf`, a `port` line in `.my.cnf`, and appended to `DB_HOSTNAME` for the
-web UI. That last one is not a port field, piler's PHP building its DSN without
-one, but PDO parses `host:port`, which is what makes a non-standard port
-reachable from the UI at all.
+`piler.conf`, a `port` line in `.my.cnf`, and appended to `DB_HOSTNAME` as
+`host:port` for the web UI. That last one is not a port field, piler's PHP
+building its DSN without one, but PDO parses `host:port`, which is what makes any
+port reachable from the UI at all. It is written even at the default, so the
+generated files say which port is in use rather than leaving it implied.
 
 `MANTICORE_PORT` governs both consumers at once, `sphxport` for the daemon and
 `SPHINX_HOSTNAME` for the UI, so the two cannot drift. Any port that is not a
