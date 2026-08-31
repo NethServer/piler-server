@@ -69,6 +69,7 @@ mysql_connect_timeout=2
 mysqlcharset=utf8mb4
 mysqldb=piler
 mysqlhost=
+mysqlport=0
 mysqlpwd=verystrongpassword
 mysqlsocket=/var/run/mysqld/mysqld.sock
 mysqluser=piler
@@ -316,6 +317,40 @@ for k in RT SPHINX_MAIN_INDEX MEMCACHED_ENABLED DECRYPT_BINARY \
          DECRYPT_ATTACHMENT_BINARY PILER_BINARY RELOAD_COMMAND; do
    check_eq "${k} is supplied when nothing states it" \
       "1" "$(grep -c "config\['${k}'\]" "${d}/config-site.php")"
+done
+
+echo "# a database on a non-standard port reaches all three consumers"
+
+# Three grammars for one setting: mysqlport for the daemon, host:port inside
+# DB_HOSTNAME for the UI - piler's PHP builds no port field but PDO parses it -
+# and its own line in the MariaDB option file.
+d="$(new_dir)"
+boot "$d" 'piler123'
+check_eq "mysqlport defaults to 0, which is what piler ships" \
+   "mysqlport=0" "$(grep '^mysqlport=' "${d}/piler.conf")"
+check_file_has "DB_HOSTNAME carries no port by default" \
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql';"
+check_eq "no port line in .my.cnf by default" \
+   "0" "$(grep -c '^port' "${d}/.my.cnf")"
+
+d="$(new_dir)"
+boot "$d" 'piler123' 'MYSQL_PORT=3307'
+check_eq "the daemon gets mysqlport" \
+   "mysqlport=3307" "$(grep '^mysqlport=' "${d}/piler.conf")"
+check_file_has "the UI gets host:port in DB_HOSTNAME" \
+   "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql:3307';"
+check_eq "both .my.cnf sections get a port line" \
+   "2" "$(grep -c '^port = 3307$' "${d}/.my.cnf")"
+check_eq ".my.cnf stays parseable, host still quoted" \
+   'host = "mysql"' "$(grep -m1 '^host' "${d}/.my.cnf")"
+
+for bad in "abc" "0" "99999999" "3307;rm"; do
+   d="$(new_dir)"
+   if boot "$d" 'piler123' "MYSQL_PORT=${bad}" 2> /dev/null; then
+      ko "MYSQL_PORT='${bad}' was accepted"
+   else
+      ok "MYSQL_PORT='${bad}' is rejected"
+   fi
 done
 
 echo "# the service ports are overridable, and default to the standard ones"
