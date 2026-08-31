@@ -69,7 +69,6 @@ mysql_connect_timeout=2
 mysqlcharset=utf8mb4
 mysqldb=piler
 mysqlhost=
-mysqlport=0
 mysqlpwd=verystrongpassword
 mysqlsocket=/var/run/mysqld/mysqld.sock
 mysqluser=piler
@@ -176,6 +175,27 @@ check_escaper sed_replacement "a/b"    'a\/b'   /
 check_escaper sed_replacement "a/b"    "a/b"    %
 check_escaper sed_replacement "a%b"    'a\%b'   %
 check_escaper sed_replacement 'a\b'    'a\\b'   /
+
+# PILER_CONF_KEYS is the upstream-rename check's list, so the fixture has to
+# carry every one of them or those cases pass vacuously. mysqlport is the
+# counter-example: the shipped dist omits it, piler defaulting it to 0, so it is
+# set by conf_set but must not be demanded of the template.
+conf_keys() {
+   (
+      # shellcheck source=../entrypoint.sh
+      source "$ENTRYPOINT"
+      printf '%s\n' "${PILER_CONF_KEYS[@]}"
+   )
+}
+
+echo "# the fixture mirrors the shipped template's key set"
+
+for k in $(conf_keys); do
+   check_eq "the fixture carries ${k}" \
+      "1" "$(grep -c "^${k}=" "${TMPL}/piler.conf.dist")"
+done
+check_eq "mysqlport stays out of the fixture, as it is out of the shipped dist" \
+   "0" "$(grep -c '^mysqlport=' "${TMPL}/piler.conf.dist")"
 
 echo "# a first boot writes the generated config"
 
@@ -326,7 +346,9 @@ echo "# a database on a non-standard port reaches all three consumers"
 # and its own line in the MariaDB option file.
 d="$(new_dir)"
 boot "$d" 'piler123'
-check_eq "mysqlport defaults to 0, which is what piler ships" \
+# The shipped dist has no mysqlport, piler defaulting it to 0, so this is the
+# append path and mysqlport must stay out of the upstream-rename check.
+check_eq "mysqlport is appended as 0, matching what piler defaults to" \
    "mysqlport=0" "$(grep '^mysqlport=' "${d}/piler.conf")"
 check_file_has "DB_HOSTNAME carries no port by default" \
    "${d}/config-site.php" "\$config['DB_HOSTNAME'] = 'mysql';"
