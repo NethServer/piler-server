@@ -124,8 +124,7 @@ php_value() {
    php -r 'include $argv[1]; echo $config[$argv[2]];' "$1" "$2"
 }
 
-# The escapers are pure functions, so drive them directly instead of only
-# through their output files: a table says exactly what each grammar needs.
+# Pure functions, so a table states exactly what each grammar needs.
 escaper_out() {
    local fn="$1"
    shift
@@ -149,12 +148,10 @@ check_escaper php_single_quoted "plain"    "plain"
 check_escaper php_single_quoted "a'b"      "a\\'b"
 check_escaper php_single_quoted 'a\b'      'a\\b'
 check_escaper php_single_quoted 'a#b"c$d'  'a#b"c$d'
-# An already-escaped value must be escaped again, not passed through: the
-# escaper is applied once, at the point of writing, and nowhere else.
+# An already-escaped value gets escaped again, not passed through.
 check_escaper php_single_quoted "a\\'b"    "a\\\\\\'b"
 
-# MariaDB option file: always quoted, because unquoted a '#' starts a comment
-# and a trailing space is trimmed. Verified against mariadb:12.0.2.
+# Always quoted: unquoted, '#' comments and a trailing space is trimmed.
 check_escaper my_cnf_value "plain"   '"plain"'
 check_escaper my_cnf_value "a#b"     '"a#b"'
 check_escaper my_cnf_value "ab "     '"ab "'
@@ -162,15 +159,14 @@ check_escaper my_cnf_value 'a\b'     '"a\\b"'
 check_escaper my_cnf_value 'a"b'     '"a\"b"'
 check_escaper my_cnf_value "a'b"     '"a'"'"'b"'
 
-# SQL literal: MariaDB interprets backslash inside literals, so doubling the
-# quote alone silently stores a different value.
+# MariaDB interprets backslash inside literals, so doubling the quote is not
+# enough.
 check_escaper sql_literal "plain"  "plain"
 check_escaper sql_literal "a'b"    "a''b"
 check_escaper sql_literal 'a\b'    'a\\b'
 check_escaper sql_literal '$2y$10$x\y'  '$2y$10$x\\y'
 
-# sed replacement text: backslash, ampersand and the delimiter in use. The
-# ampersand is the dangerous one - sed replaces it with the whole match.
+# The ampersand is the dangerous one: sed replaces it with the whole match.
 check_escaper sed_replacement "plain"  "plain"  /
 check_escaper sed_replacement "a&b"    'a\&b'   /
 check_escaper sed_replacement "a/b"    'a\/b'   /
@@ -269,8 +265,6 @@ fi
 
 echo "# .my.cnf quotes what MariaDB would otherwise truncate"
 
-# Unquoted, the '#' starts a comment and the trailing space is trimmed, so the
-# client is denied and the entrypoint never reaches the database.
 d="$(new_dir)"
 boot "$d" 'pw#with space '
 check_eq ".my.cnf quotes the password in [client]" \
@@ -297,11 +291,7 @@ check_eq "no sql_ credentials leaked anywhere" \
 
 echo "# every interpolated value survives sed-special characters"
 
-# Two distinct failure modes, so two cases. An unescaped '&' corrupts silently:
-# sed replaces it with the whole match, leaving something that still reads like
-# a hostname. An unescaped delimiter instead ends the expression and sed errors
-# out, which aborts the start - detectable, but only if the check does not
-# assume the boot succeeded.
+# Two failure modes: '&' corrupts silently, a delimiter makes sed error out.
 echo "#   an ampersand alone corrupts silently"
 
 d="$(new_dir)"
@@ -389,16 +379,13 @@ fi
 
 echo "# a key missing from the live piler.conf is appended, not fatal"
 
-# The live file may come from the config volume or from a downstream module's
-# template, so a key this image drives from the environment can legitimately be
-# absent. sed cannot add a line, which is how RT=1 used to be accepted and then
-# silently dropped on ns8-piler.
+# sed cannot add a line, which is how RT=1 used to be accepted then dropped on
+# ns8-piler, whose template has no rtindex.
 for key in mysqlpwd mysqlhost hostid rtindex pidfile mysqlsocket; do
    d="$(new_dir)"
    boot "$d" 'piler123'
    sed -i "/^${key}=/d" "${d}/piler.conf"
-   # Explicit, so refusing to start is reported as this case failing rather than
-   # killing the suite under errexit with a bare error line.
+   # Explicit, so a refusal is a named failure rather than an errexit abort.
    if boot "$d" 'appended-secret' 2> /dev/null; then
       check_eq "${key} is appended when the live file lacks it" \
          "1" "$(grep -c "^${key}=" "${d}/piler.conf")"
@@ -407,8 +394,7 @@ for key in mysqlpwd mysqlhost hostid rtindex pidfile mysqlsocket; do
    fi
 done
 
-# Appending has to work on a file that does not end with a newline, or the key
-# joins the last line and neither is parsed.
+# Without a final newline the appended key would join the last line.
 d="$(new_dir)"
 boot "$d" 'piler123'
 sed -i '/^rtindex=/d' "${d}/piler.conf"
@@ -418,7 +404,6 @@ boot "$d" 'piler123'
 check_eq "rtindex is on its own line after appending to a file with no final newline" \
    "rtindex=1" "$(grep '^rtindex=' "${d}/piler.conf")"
 
-# A value appended rather than substituted still has to arrive verbatim.
 d="$(new_dir)"
 boot "$d" 'piler123'
 sed -i '/^hostid=/d' "${d}/piler.conf"
@@ -428,11 +413,8 @@ check_eq "an appended value keeps sed-special characters" \
 
 echo "# a key renamed in the shipped template fails loudly instead of silently"
 
-# The rename check runs against the template the image ships, not the live file:
-# that one comes from the same package as the binary, so a missing key there
-# means upstream moved and this image would set a key piler ignores. Not
-# hypothetical - the first version of this work edited `mysqlpassword=`, which
-# does not exist; the key is `mysqlpwd=`.
+# Not hypothetical: the first version of this work edited `mysqlpassword=`,
+# which does not exist. The key is `mysqlpwd=`.
 for key in mysqlpwd mysqlhost hostid rtindex pidfile; do
    d="$(new_dir)"
    broken="${WORK}/broken-${key}"
