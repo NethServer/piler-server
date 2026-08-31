@@ -80,6 +80,17 @@ my_cnf_value() {
    printf '"%s"' "$s"
 }
 
+# Escape a value for a single-quoted SQL string literal. MariaDB interprets
+# backslash inside literals by default, so doubling the quote is not enough: an
+# unescaped backslash silently stores a different value than the caller asked
+# for.
+sql_literal() {
+   local s="$1"
+   s="${s//\\/\\\\}"
+   s="${s//\'/\'\'}"
+   printf '%s' "$s"
+}
+
 pre_flight_check() {
    [[ -v PILER_HOSTNAME ]] || error "Missing PILER_HOSTNAME env variable"
    [[ -v MYSQL_HOSTNAME ]] || error "Missing MYSQL_HOSTNAME env variable"
@@ -292,8 +303,8 @@ init_database() {
    fi
 
    if [[ -v ADMIN_USER_PASSWORD_HASH ]]; then
-      # Double any single quote so the hash can't break out of the SQL literal.
-      local admin_hash="${ADMIN_USER_PASSWORD_HASH//\'/\'\'}"
+      local admin_hash
+      admin_hash="$(sql_literal "$ADMIN_USER_PASSWORD_HASH")"
       mysql "--defaults-file=${PILER_MY_CNF}" "$MYSQL_DATABASE" <<< "update user set password='${admin_hash}' where uid=0"
    fi
 }
