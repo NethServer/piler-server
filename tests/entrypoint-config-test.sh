@@ -24,7 +24,8 @@ if [[ "${1:-}" == "--boot" ]]; then
    # A 4096-bit key per boot would dominate the runtime.
    make_certificate() { : > "$1"; }
 
-   # Both write files and need no database, unlike init_database.
+   # Everything a real start does except init_database, which needs a database.
+   pre_flight_check
    fix_configs
    create_my_cnf_files
    exit 0
@@ -74,6 +75,7 @@ mysqluser=piler
 hostid=localhost
 tls_enable=0
 sphxhost=127.0.0.1
+sphxport=9306
 rtindex=0
 pidfile=/var/run/piler/piler.pid
 EOF
@@ -314,6 +316,42 @@ for k in RT SPHINX_MAIN_INDEX MEMCACHED_ENABLED DECRYPT_BINARY \
          DECRYPT_ATTACHMENT_BINARY PILER_BINARY RELOAD_COMMAND; do
    check_eq "${k} is supplied when nothing states it" \
       "1" "$(grep -c "config\['${k}'\]" "${d}/config-site.php")"
+done
+
+echo "# the service ports are overridable, and default to the standard ones"
+
+d="$(new_dir)"
+boot "$d" 'piler123'
+check_eq "sphxport defaults to manticore's own default" \
+   "sphxport=9306" "$(grep '^sphxport=' "${d}/piler.conf")"
+check_file_has "SPHINX_HOSTNAME defaults to 9306" \
+   "${d}/config-site.php" "'manticore:9306';"
+check_file_has "SPHINX_HOSTNAME_READONLY defaults to 9307" \
+   "${d}/config-site.php" "'manticore:9307';"
+check_file_has "the memcached port defaults to 11211" \
+   "${d}/config-site.php" "\$memcached_server = ['memcached', 11211];"
+
+# One variable governs both consumers: the daemon reads sphxport from
+# piler.conf, the UI reads SPHINX_HOSTNAME from config-site.php.
+d="$(new_dir)"
+boot "$d" 'piler123' 'MANTICORE_PORT=19306' 'MANTICORE_PORT_READONLY=19307' 'MEMCACHED_PORT=21211'
+check_eq "the daemon follows MANTICORE_PORT" \
+   "sphxport=19306" "$(grep '^sphxport=' "${d}/piler.conf")"
+check_file_has "the UI follows MANTICORE_PORT" \
+   "${d}/config-site.php" "'manticore:19306';"
+check_file_has "the read-only port follows its own variable" \
+   "${d}/config-site.php" "'manticore:19307';"
+check_file_has "the memcached port follows MEMCACHED_PORT" \
+   "${d}/config-site.php" "\$memcached_server = ['memcached', 21211];"
+
+# A non-numeric port would leave a config that parses but never connects.
+for bad in "abc" "0" "99999999" "9306;rm" "-1"; do
+   d="$(new_dir)"
+   if boot "$d" 'piler123' "MANTICORE_PORT=${bad}" 2> /dev/null; then
+      ko "MANTICORE_PORT='${bad}' was accepted"
+   else
+      ok "MANTICORE_PORT='${bad}' is rejected"
+   fi
 done
 
 echo "# .my.cnf quotes what MariaDB would otherwise truncate"
