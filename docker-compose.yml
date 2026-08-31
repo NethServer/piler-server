@@ -56,15 +56,25 @@ services:
       - MYSQL_HOSTNAME=mysql
       - MYSQL_DATABASE=piler
       - MYSQL_USER=piler
+      # No '%' in the password: piler's cron scripts parse piler.conf with
+      # configparser, so the nightly purge dies on it (upstream bug).
       - MYSQL_PASSWORD=piler123
       - PILER_HOSTNAME=${ARCHIVE_HOST:-archive.example.com}
-      - RT=1
-      # Left implicit so CI exercises the defaults. Setting one here means
-      # moving the service's own listener to match.
+      # Optional, shown at their defaults. Uncommenting a port means moving
+      # that service's own listener to match. A prefix also needs SITE_URL,
+      # BRANDING_LOGO, BRANDING_FAVICON and SITE_LOGO_LG in config-site.php.
+      # - RT=1                          # the only accepted value
       # - MYSQL_PORT=3306
       # - MANTICORE_PORT=9306
       # - MANTICORE_PORT_READONLY=9307
       # - MEMCACHED_PORT=11211
+      # - PATH_PREFIX=/archive/
+      # - ADMIN_USER_PASSWORD_HASH=      # no default; set to reset admin
+      # - MYSQL_WAIT_MAX_ATTEMPTS=60
+      # - PILER_STOP_DRAIN=1
+      # - PILER_STOP_DRAIN_TIMEOUT=300
+      # - PILER_STOP_DRAIN_INTERVAL=2
+      # - PILER_USER=piler
     ports:
       - "25:25"
       - "80:80"

@@ -165,6 +165,14 @@ Notes on four of them.
 `/archive/` all become `/archive/`, the form upstream concatenates with relative
 asset paths. A quote in the value is rejected.
 
+It is not sufficient on its own. Four keys stay at the root and the entrypoint
+sets none of them, so a deployment behind a prefix has to add them to
+`config-site.php` itself: `SITE_URL`, `BRANDING_LOGO`, `BRANDING_FAVICON` and
+`SITE_LOGO_LG`. Upstream warns about the last three; `SITE_URL` it does not
+mention, and that is the one that matters — the redirect after login is built
+from it, so a stale value sends the browser out of the prefix. Verified with
+`PATH_PREFIX=/archive/`, where login redirected to `/index.php` at the root.
+
 `MYSQL_PORT` lands in three grammars — `mysqlport`, a `port` line in `.my.cnf`,
 and appended to `DB_HOSTNAME` as `host:port`. That last one is not a port field,
 piler's PHP building its DSN without one, but PDO parses `host:port`. It is
@@ -246,6 +254,11 @@ a deployment that sets one keeps it:
 `RT` is in the first list, not this one: with no `indexer` in the image, RT=1 is a
 constraint rather than a preference, which is why `pre_flight_check` refuses
 anything else.
+
+`SPHINX_MAIN_INDEX` names the index the UI searches; the daemon reads that name
+from `sphxdb`, and Manticore defines it in its own config. Rename in all three
+or it fails silently — a mismatch empties search, and an index Manticore does
+not define makes piler accept mail over SMTP and never archive it.
 
 Every other key is yours. The same holds for `piler.conf`: a file supplied by a
 volume or a downstream module needs to list only what it actually decides.
