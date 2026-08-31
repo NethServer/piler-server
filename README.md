@@ -55,8 +55,13 @@ this image. `entrypoint.sh` only fills in environment-specific values:
   indexing toggle, pidfile location.
 - `config-site.php` — web UI config: database connection, decrypt binaries,
   memcached, manticore hostnames.
-- `manticore.conf` — full-text search daemon config.
 - `piler-nginx.conf` — the vhost nginx serves piler's web UI from.
+
+The packaged `manticore.conf` is deliberately not one of them. It configures a
+local `indexer`/`searchd`, neither of which this image ships or starts, so
+nothing would read it. Manticore runs in its own container and takes its config
+from there — see [config/manticore.conf](config/manticore.conf), a different
+file that happens to share the name.
 
 ## Repository layout
 
@@ -122,37 +127,67 @@ See `docker-compose.yml` for the full stack: `mysql` (MariaDB), `manticore`
 
 ### Environment variables
 
-Required (`entrypoint.sh`'s `pre_flight_check` aborts if any is missing):
+Required — `pre_flight_check` aborts the start if any is missing:
 
-- `PILER_HOSTNAME` — hostname piler identifies itself as (`hostid` in
-  `piler.conf`, also used for the TLS certificate's CN).
-- `MYSQL_HOSTNAME`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` —
-  database connection.
+| Variable | Lands in |
+| --- | --- |
+| `PILER_HOSTNAME` | `hostid` in `piler.conf`, the nginx `server_name`, the web UI's site name |
+| `MYSQL_HOSTNAME` | `mysqlhost`, `.my.cnf`, `DB_HOSTNAME` |
+| `MYSQL_DATABASE` | `mysqldb`, `DB_DATABASE` |
+| `MYSQL_USER` | `mysqluser`, `.my.cnf`, `DB_USERNAME` |
+| `MYSQL_PASSWORD` | `mysqlpwd`, `.my.cnf`, `DB_PASSWORD` |
+
+`PILER_HOSTNAME` is not the self-signed certificate's CN, which is a fixed
+placeholder.
 
 Optional:
 
-- `RT` (default `1`, and must be `1`) — real-time manticore indexing. This
-  image only supports RT mode: manticore runs as a separate container and no
-  local `indexer` binary is shipped, so batch indexing (`RT=0`) cannot build
-  or rotate indexes. The entrypoint rejects any value other than `1`.
-- `PATH_PREFIX` — set if piler's web UI is served behind a reverse-proxy path
-  prefix. Give a bare path, no quotes: `/archive`, `archive/` and `/archive/`
-  all end up as `/archive/`, which is the form upstream concatenates with
-  relative asset paths. A value containing a quote is rejected.
-- `ADMIN_USER_PASSWORD_HASH` — if set, overwrites the built-in admin
-  account's password hash at database init time.
-- `MANTICORE_HOSTNAME` (default `manticore`), `MEMCACHED_HOSTNAME` (default
-  `memcached`) — override if those services aren't named as in
-  `docker-compose.yml`.
-- `PILER_STOP_DRAIN` (default `1`), `PILER_STOP_DRAIN_TIMEOUT` (default `300`),
-  `PILER_STOP_DRAIN_INTERVAL` (default `2`) — graceful stop, see below.
-- `MYSQL_WAIT_MAX_ATTEMPTS` (default `60`) — how many 5-second probes the
-  entrypoint gives the database before it aborts the start.
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `RT` | `1` | Real-time indexing. Must be `1`; any other value aborts the start |
+| `PATH_PREFIX` | *unset* | Path prefix when the UI is behind a reverse proxy |
+| `ADMIN_USER_PASSWORD_HASH` | *unset* | Overwrites the built-in admin's hash at schema creation |
+| `MYSQL_PORT` | `3306` | Database port — MariaDB's own default |
+| `MANTICORE_HOSTNAME` | `manticore` | Manticore host |
+| `MANTICORE_PORT` | `9306` | Manticore's SQL port — its own default |
+| `MANTICORE_PORT_READONLY` | `9307` | Manticore's `mysql_readonly` port — piler's convention |
+| `MEMCACHED_HOSTNAME` | `memcached` | memcached host |
+| `MEMCACHED_PORT` | `11211` | memcached port — its own default |
+| `MYSQL_WAIT_MAX_ATTEMPTS` | `60` | 5-second probes before the start gives up on the database |
+| `PILER_STOP_DRAIN` | `1` | Drain the spool on a graceful stop, see below |
+| `PILER_STOP_DRAIN_TIMEOUT` | `300` | Seconds to keep draining |
+| `PILER_STOP_DRAIN_INTERVAL` | `2` | Seconds between spool checks |
+| `PILER_USER` | `piler` | Owner of the generated files, set in the Dockerfile |
 
-`MYSQL_PASSWORD` may contain characters that are special to the shell, to sed
-and to PHP; the entrypoint escapes it per destination. The one exception is
-`#`, which MariaDB's option-file parser reads as the start of a comment in the
-generated `.my.cnf` — avoid it in a generated password.
+Notes on four of them.
+
+`PATH_PREFIX` takes a bare path, no quotes: `/archive`, `archive/` and
+`/archive/` all become `/archive/`, the form upstream concatenates with relative
+asset paths. A quote in the value is rejected.
+
+`MYSQL_PORT` lands in three grammars — `mysqlport`, a `port` line in `.my.cnf`,
+and appended to `DB_HOSTNAME` as `host:port`. That last one is not a port field,
+piler's PHP building its DSN without one, but PDO parses `host:port`. It is
+written even at the default, so the generated files name the port instead of
+implying it.
+
+`MANTICORE_PORT` covers both consumers, `sphxport` for the daemon and
+`SPHINX_HOSTNAME` for the UI, so they cannot drift. Any port that is not a
+number aborts the start rather than leaving a config that never connects. It
+says where to *reach* manticore, not where manticore listens: change
+[config/manticore.conf](config/manticore.conf)'s `listen` lines and this
+variable has to follow, or search stops working.
+
+`PILER_USER` is only worth overriding against an image whose uid/gid layout
+differs.
+
+`CONFIG_DIR`, `TMP_CONF_DIR` and `PILER_JS` also exist, for
+`tests/entrypoint-config-test.sh` to drive the entrypoint against a throwaway
+directory. Not for deployments.
+
+Every value is escaped for the grammar it lands in — sed replacement text, a PHP
+literal, a MariaDB option file, an SQL literal — so a generated password needs no
+character restriction.
 
 ### Volumes
 
@@ -162,26 +197,40 @@ generated `.my.cnf` — avoid it in a generated password.
 > `piler.key`.** A store without its key cannot be decrypted, and there is no
 > recovery: a new key does not open old mail.
 
-- `piler_etc` (`/etc/piler`) — `piler.key` (see above), plus the generated
-  config: `piler.conf`, `config-site.php`, `manticore.conf`, TLS cert/key.
+| Volume | Holds | Back up |
+| --- | --- | --- |
+| `piler_etc` (`/etc/piler`) | `piler.key`, the TLS pair, and the generated `piler.conf`, `config-site.php`, `piler-nginx.conf`, `.my.cnf` | yes, with `piler_store` |
+| `piler_store` (`/var/piler/store`) | the archived mail, encrypted | yes |
+| `piler_spool` (`/var/piler/tmp`) | mail accepted by `piler-smtp`, not yet archived | no — transient, but it must be a volume or a container recreation drops it |
 
-  What `entrypoint.sh` rewrites on each start, and what it leaves alone:
+#### What the entrypoint writes
 
-  | File | On every start |
-  | --- | --- |
-  | `piler.conf` | the connection and daemon keys are re-templated (`mysqlhost`, `mysqluser`, `mysqlpwd`, `mysqldb`, `hostid`, `tls_enable`, `sphxhost`, `rtindex`, `mysqlsocket`, `pidfile`); the start aborts if any of them is missing from the template, rather than silently leaving a stale value; other keys are left as found |
-  | `config-site.php` | everything below the `# generated by entrypoint` marker is deleted and rewritten; edits above it are kept |
-  | `.my.cnf` | rewritten whole |
-  | `piler.key`, `piler.pem`, `manticore.conf`, `piler-nginx.conf` | created only if absent |
+| File | On every start |
+| --- | --- |
+| `piler.conf` | sets the connection and daemon keys from the environment, appending a line the file does not carry; every other key is left as found |
+| `config-site.php` | rewrites the block below the `# generated by entrypoint` marker; above it is yours |
+| `.my.cnf` | rewritten whole |
+| `piler-nginx.conf` | rewritten if absent, or if it has no `listen` directive |
+| `piler.key`, `piler.pem` | created only if absent |
 
-  This is what makes a changed `MYSQL_PASSWORD` or `MANTICORE_HOSTNAME` take
-  effect on a restart. Hand edits to the re-templated keys do not survive. A
-  create-only file can be regenerated by deleting it and restarting — except
-  `piler.key`, see the warning above.
-- `piler_store` (`/var/piler/store`) — the actual archived mail, encrypted.
-- `piler_spool` (`/var/piler/tmp`) — mail accepted by `piler-smtp` and not yet
-  archived by `piler`. Transient, not a backup target, but it must be a volume:
-  a container recreation with a non-empty spool would otherwise drop that mail.
+So a changed `MYSQL_PASSWORD` or `MANTICORE_HOSTNAME` takes effect on a restart,
+and a hand edit to one of those keys does not survive it. A create-only file is
+regenerated by deleting it and restarting — except `piler.key`, see above.
+
+`config-site.php` splits in two. These follow the environment and are replaced
+every start, so set them through the variables above:
+
+`DB_HOSTNAME`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `SPHINX_HOSTNAME`,
+`SPHINX_HOSTNAME_READONLY`, `$memcached_server`, and `PATH_PREFIX` when set.
+
+These are constants, written only when the file does not already state them, so
+a deployment that sets one keeps it:
+
+`RT`, `SPHINX_MAIN_INDEX`, `MEMCACHED_ENABLED`, `DECRYPT_BINARY`,
+`DECRYPT_ATTACHMENT_BINARY`, `PILER_BINARY`, `RELOAD_COMMAND`.
+
+Every other key is yours. The same holds for `piler.conf`: a file supplied by a
+volume or a downstream module needs to list only what it actually decides.
 
 ### Default credentials
 
@@ -259,34 +308,27 @@ Useful checks on a stuck or crash-looping container:
 
 ## CI
 
-Four workflows, all under `.github/workflows/`:
+Four workflows under `.github/workflows/`:
 
-- `build.yml` — builds and pushes the image on every push to `main` and on
-  pull requests from internal branches. Fork PRs are skipped, so untrusted
-  code never runs in CI. Tags `latest` only on the default branch, otherwise a
-  sanitized branch-name tag; every build also gets an immutable sha tag. A
-  `concurrency` group cancels an in-flight older build when a newer commit
-  lands on the same ref.
-- `validate.yml` — triggered by `build.yml` completing (`workflow_run`), or
-  manually (`workflow_dispatch`, useful to test a fix before merging since
-  `workflow_run` always loads the workflow file from `main`). Starts the
-  full `docker-compose.yml` stack, waits for the healthcheck, logs in as
-  admin and auditor, sends a real test email over SMTP, checks it's
-  archived and full-text searchable, restarts `mysql`/`piler` and checks the
-  archived mail survives, checks a restart neither grows nor breaks
-  `config-site.php`, rotates the database password and checks both the
-  archiver and the web UI pick it up, and finally forces a service into
-  `FATAL` to verify `exit-on-fatal` brings the container down. It checks out
-  the triggering ref with `persist-credentials: false` and least-privilege
-  permissions.
-- `lint.yml` — shellcheck (warning threshold) over every shell script,
-  hadolint over the Dockerfile, and `tests/entrypoint-config-test.sh`. Needs no
-  registry credentials and no image build, so it also runs on fork PRs and
-  finishes in under a minute.
-- `release.yml` — triggered by pushing a `v*` git tag (see
-  [Release](#release) above). Verifies the tag matches the Dockerfile's
-  `PILER_VERSION`/`BASE_IMAGE`, then builds and pushes it alongside
-  refreshed `latest`/`<base_image_tag>` tags.
+| Workflow | Trigger | Does |
+| --- | --- | --- |
+| `lint.yml` | every push and PR, forks included | shellcheck, hadolint, and `tests/entrypoint-config-test.sh`. No credentials, no build, under a minute |
+| `build.yml` | push to `main`, internal PRs | builds and pushes. Fork PRs are skipped so untrusted code never runs in CI |
+| `validate.yml` | `build.yml` completing, or `workflow_dispatch` | starts the full compose stack and exercises it, see below |
+| `release.yml` | pushing a `v*` tag | checks the tag matches the Dockerfile, then builds and pushes it with refreshed `latest`/`<base_image_tag>` |
+
+`build.yml` tags `latest` only on the default branch, otherwise a sanitized
+branch name; every build also gets an immutable sha tag, which is what
+`validate.yml` pins to. A `concurrency` group cancels an older in-flight build
+on the same ref.
+
+`validate.yml` logs in as admin and auditor, sends a real mail over SMTP and
+checks it is archived and searchable, restarts the stack and checks the mail
+survives, checks a restart neither grows nor breaks `config-site.php`, rotates
+the database password and checks both the archiver and the UI pick it up, and
+forces a service into `FATAL` to verify `exit-on-fatal` brings the container
+down. Dispatch it manually to test a branch: `workflow_run` always loads the
+workflow file from `main`.
 
 ## Renovate
 
