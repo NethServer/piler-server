@@ -163,6 +163,13 @@ Optional:
   `PILER_STOP_DRAIN_INTERVAL` (default `2`) — graceful stop, see below.
 - `MYSQL_WAIT_MAX_ATTEMPTS` (default `60`) — how many 5-second probes the
   entrypoint gives the database before it aborts the start.
+- `PILER_USER` (default `piler`) — the account that owns the generated files.
+  Set in the Dockerfile; overriding it only makes sense against an image whose
+  uid/gid layout differs.
+
+Three more exist and are not for deployments: `CONFIG_DIR`, `TMP_CONF_DIR` and
+`PILER_JS` let `tests/entrypoint-config-test.sh` drive the entrypoint against a
+throwaway directory. They default to the real paths.
 
 Every value above is escaped for whichever grammar it lands in — sed replacement
 text, a PHP string literal, a MariaDB option file, an SQL literal — so a
