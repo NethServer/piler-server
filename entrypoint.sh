@@ -223,34 +223,43 @@ fix_configs() {
       path_prefix="${path_prefix%/}/"
    fi
 
-   # Dropped before rewriting so the file does not grow. PHP keeps the last
-   # assignment, so these override the template above the marker.
+   # Only what the environment decides goes in the block: dropped and rewritten
+   # every start, so a rotated password or a renamed service is picked up. PHP
+   # keeps the last assignment, so these win over the template above the marker.
    safe_sed "$CONFIG_SITE_PHP" "/^${CONFIG_SITE_MARKER}\$/,\$d"
 
    {
       echo "$CONFIG_SITE_MARKER"
-      echo "\$config['DECRYPT_BINARY'] = '/usr/bin/pilerget';"
-      echo "\$config['DECRYPT_ATTACHMENT_BINARY'] = '/usr/bin/pileraget';"
-      echo "\$config['PILER_BINARY'] = '/usr/sbin/piler';"
       echo "\$config['DB_HOSTNAME'] = '$(php_single_quoted "$MYSQL_HOSTNAME")';"
       echo "\$config['DB_DATABASE'] = '$(php_single_quoted "$MYSQL_DATABASE")';"
       echo "\$config['DB_USERNAME'] = '$(php_single_quoted "$MYSQL_USER")';"
       echo "\$config['DB_PASSWORD'] = '$(php_single_quoted "$MYSQL_PASSWORD")';"
-      echo "\$config['MEMCACHED_ENABLED'] = 1;"
       echo "\$memcached_server = ['$(php_single_quoted "$MEMCACHED_HOSTNAME")', 11211];"
-      echo "\$config['RT'] = 1;"
-      echo "\$config['SPHINX_MAIN_INDEX'] = 'piler1';"
       echo "\$config['SPHINX_HOSTNAME'] = '$(php_single_quoted "$MANTICORE_HOSTNAME"):9306';"
       echo "\$config['SPHINX_HOSTNAME_READONLY'] = '$(php_single_quoted "$MANTICORE_HOSTNAME"):9307';"
-      # The UI "Apply changes" button runs RELOAD_COMMAND. Everything here is
-      # the same unprivileged piler user, so call rc.piler directly - no
-      # sudo/systemctl (which also sidesteps the broken systemctl-probe
-      # default, jsuto #479).
-      echo "\$config['RELOAD_COMMAND'] = '/etc/init.d/rc.piler reload';"
       if [[ -n "$path_prefix" ]]; then
          echo "\$config['PATH_PREFIX'] = '$(php_single_quoted "$path_prefix")';"
       fi
    } >> "$CONFIG_SITE_PHP"
+
+   # Constants, so written only when absent: an integrated deployment may
+   # legitimately override them and a standalone one has nothing else to supply
+   # them. RELOAD_COMMAND calls rc.piler directly because everything here runs
+   # as the same unprivileged user - no sudo/systemctl, which also sidesteps the
+   # broken systemctl-probe default (jsuto #479).
+   local setting key
+   for setting in \
+      "RT|1" \
+      "SPHINX_MAIN_INDEX|'piler1'" \
+      "MEMCACHED_ENABLED|1" \
+      "DECRYPT_BINARY|'/usr/bin/pilerget'" \
+      "DECRYPT_ATTACHMENT_BINARY|'/usr/bin/pileraget'" \
+      "PILER_BINARY|'/usr/sbin/piler'" \
+      "RELOAD_COMMAND|'/etc/init.d/rc.piler reload'"; do
+      key="${setting%%|*}"
+      grep -q "config\['${key}'\]" "$CONFIG_SITE_PHP" \
+         || echo "\$config['${key}'] = ${setting#*|};" >> "$CONFIG_SITE_PHP"
+   done
 
    if [[ -n "$path_prefix" ]]; then
       log "PATH_PREFIX normalized to ${path_prefix}"
