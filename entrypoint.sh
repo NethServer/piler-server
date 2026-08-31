@@ -117,17 +117,26 @@ sql_literal() {
 }
 
 pre_flight_check() {
-   [[ -v PILER_HOSTNAME ]] || error "Missing PILER_HOSTNAME env variable"
-   [[ -v MYSQL_HOSTNAME ]] || error "Missing MYSQL_HOSTNAME env variable"
-   [[ -v MYSQL_DATABASE ]] || error "Missing MYSQL_DATABASE env variable"
-   [[ -v MYSQL_USER ]]     || error "Missing MYSQL_USER env variable"
-   [[ -v MYSQL_PASSWORD ]] || error "Missing MYSQL_PASSWORD env variable"
+   local var
+   for var in PILER_HOSTNAME MYSQL_HOSTNAME MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD; do
+      [[ -n "${!var:-}" ]] || error "Missing ${var} env variable"
+   done
+
+   # A newline aborts a sed mid-file, leaving piler.conf half written; a trailing
+   # one is silently eaten by the escapers' command substitution and only in some
+   # destinations, so the files would disagree. Refuse rather than escape.
+   for var in PILER_HOSTNAME MYSQL_HOSTNAME MYSQL_DATABASE MYSQL_USER \
+              MYSQL_PASSWORD PATH_PREFIX ADMIN_USER_PASSWORD_HASH \
+              MANTICORE_HOSTNAME MEMCACHED_HOSTNAME; do
+      [[ "${!var:-}" != *[$'\n\r\t']* ]] \
+         || error "${var} must not contain a newline, carriage return or tab"
+   done
    # Real-time indexing only: manticore runs in a separate container with no
    # local `indexer`, so batch mode (RT=0) can't build or rotate indexes here.
    local port
    for port in MYSQL_PORT MANTICORE_PORT MANTICORE_PORT_READONLY MEMCACHED_PORT; do
-      [[ "${!port}" =~ ^[1-9][0-9]{0,4}$ ]] \
-         || error "${port} must be a port number, got '${!port}'"
+      [[ "${!port}" =~ ^[1-9][0-9]{0,4}$ && "${!port}" -le 65535 ]] \
+         || error "${port} must be a port number between 1 and 65535, got '${!port}'"
    done
    [[ "$RT" == "1" ]] || error "RT must be 1 (real-time mode), got RT='${RT}'. This image runs piler against an external manticore container with no local indexer binary, so any value other than 1 (including batch mode RT=0) is unsupported."
 }
@@ -228,8 +237,12 @@ fix_configs() {
    log "Updating ${CONFIG_SITE_PHP}"
 
    # piler's PHP builds its DSN without a port field, but PDO parses host:port,
-   # so that is how the web UI reaches the database on any port at all.
-   local db_host="${MYSQL_HOSTNAME}:${MYSQL_PORT}"
+   # so that is how the web UI reaches the database on any port at all. An IPv6
+   # literal needs brackets for that: verified against a server on ::1:3390,
+   # where the bracketed form carries the port and the bare one does not.
+   local db_host="${MYSQL_HOSTNAME#[}"
+   db_host="[${db_host%]}]:${MYSQL_PORT}"
+   [[ "$MYSQL_HOSTNAME" == *:* ]] || db_host="${MYSQL_HOSTNAME}:${MYSQL_PORT}"
 
    # Upstream concatenates it with relative paths and defaults to '/', so it
    # needs both slashes. The quotes in piler.js are JS syntax, not part of the
@@ -249,6 +262,9 @@ fix_configs() {
 
    {
       echo "$CONFIG_SITE_MARKER"
+      # Enforced, not suggested: this image has no indexer, so RT=1 is a
+      # constraint, which is why pre_flight_check refuses anything else.
+      echo "\$config['RT'] = 1;"
       echo "\$config['DB_HOSTNAME'] = '$(php_single_quoted "$db_host")';"
       echo "\$config['DB_DATABASE'] = '$(php_single_quoted "$MYSQL_DATABASE")';"
       echo "\$config['DB_USERNAME'] = '$(php_single_quoted "$MYSQL_USER")';"
@@ -268,7 +284,6 @@ fix_configs() {
    # broken systemctl-probe default (jsuto #479).
    local setting key
    for setting in \
-      "RT|1" \
       "SPHINX_MAIN_INDEX|'piler1'" \
       "MEMCACHED_ENABLED|1" \
       "DECRYPT_BINARY|'/usr/bin/pilerget'" \
