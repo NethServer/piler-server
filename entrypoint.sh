@@ -61,6 +61,12 @@ sed_replacement() {
    printf '%s' "$s"
 }
 
+# sed expression setting `key=value`: one place, so the escaping cannot be
+# forgotten at a call site.
+conf_key_expr() {
+   printf 's/%s=.*/%s=%s/g' "$1" "$1" "$(sed_replacement / "$2")"
+}
+
 # For a single-quoted PHP literal, where only backslash and quote are special.
 php_single_quoted() {
    local s="$1"
@@ -139,7 +145,7 @@ write_piler_nginx_conf() {
    log "Writing ${PILER_NGINX_CONF}"
 
    cp "${TMP_CONF_DIR}/piler-nginx.conf.dist" "$PILER_NGINX_CONF"
-   safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%${PILER_HOSTNAME}%"
+   safe_sed "$PILER_NGINX_CONF" "s%PILER_HOST%$(sed_replacement % "$PILER_HOSTNAME")%"
 }
 
 fix_configs() {
@@ -157,10 +163,6 @@ fix_configs() {
 
    log "Updating ${PILER_CONF}"
 
-   # The password may contain sed-special characters; escape it for the delimiter.
-   local mysql_pass_slash
-   mysql_pass_slash="$(sed_replacement / "$MYSQL_PASSWORD")"
-
    # Matched by key, not by the template's placeholder value: that is gone after
    # the first start. A sed matching nothing is indistinguishable from a no-op,
    # hence the check.
@@ -172,16 +174,16 @@ fix_configs() {
    done
 
    safe_sed "$PILER_CONF" \
-      -e "s/mysqlhost=.*/mysqlhost=${MYSQL_HOSTNAME}/g" \
-      -e "s/mysqluser=.*/mysqluser=${MYSQL_USER}/g" \
-      -e "s/mysqldb=.*/mysqldb=${MYSQL_DATABASE}/g" \
-      -e "s/mysqlpwd=.*/mysqlpwd=${mysql_pass_slash}/g" \
-      -e "s/hostid=.*/hostid=${PILER_HOSTNAME}/g" \
-      -e "s/tls_enable=.*/tls_enable=1/g" \
-      -e "s/sphxhost=.*/sphxhost=${MANTICORE_HOSTNAME}/g" \
-      -e "s/rtindex=.*/rtindex=${RT}/g" \
-      -e "s/mysqlsocket=.*/mysqlsocket=/g" \
-      -e "s%pidfile=.*%pidfile=/var/piler/run/piler.pid%g"
+      -e "$(conf_key_expr mysqlhost "$MYSQL_HOSTNAME")" \
+      -e "$(conf_key_expr mysqluser "$MYSQL_USER")" \
+      -e "$(conf_key_expr mysqldb "$MYSQL_DATABASE")" \
+      -e "$(conf_key_expr mysqlpwd "$MYSQL_PASSWORD")" \
+      -e "$(conf_key_expr hostid "$PILER_HOSTNAME")" \
+      -e "$(conf_key_expr tls_enable 1)" \
+      -e "$(conf_key_expr sphxhost "$MANTICORE_HOSTNAME")" \
+      -e "$(conf_key_expr rtindex "$RT")" \
+      -e "$(conf_key_expr mysqlsocket "")" \
+      -e "$(conf_key_expr pidfile /var/piler/run/piler.pid)"
 
    give_it_to_piler "$PILER_CONF"
 
@@ -190,7 +192,7 @@ fix_configs() {
 
       cp "${TMP_CONF_DIR}/config-site.dist.php" "$CONFIG_SITE_PHP"
 
-      safe_sed "$CONFIG_SITE_PHP" "s%HOSTNAME%${PILER_HOSTNAME}%"
+      safe_sed "$CONFIG_SITE_PHP" "s%HOSTNAME%$(sed_replacement % "$PILER_HOSTNAME")%"
 
       # A template without a trailing newline would swallow the marker line.
       if [[ -n "$(tail -c1 "$CONFIG_SITE_PHP")" ]]; then
