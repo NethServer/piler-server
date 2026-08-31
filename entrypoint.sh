@@ -70,6 +70,16 @@ php_single_quoted() {
    printf '%s' "$s"
 }
 
+# Quote a value for a MariaDB option file. Unquoted, a '#' starts a comment and
+# a trailing space is trimmed, so either silently truncates the value and the
+# client is then denied. Quoted, backslash and the quote itself need escaping.
+my_cnf_value() {
+   local s="$1"
+   s="${s//\\/\\\\}"
+   s="${s//\"/\\\"}"
+   printf '"%s"' "$s"
+}
+
 pre_flight_check() {
    [[ -v PILER_HOSTNAME ]] || error "Missing PILER_HOSTNAME env variable"
    [[ -v MYSQL_HOSTNAME ]] || error "Missing MYSQL_HOSTNAME env variable"
@@ -292,8 +302,13 @@ create_my_cnf_files() {
    # Ubuntu 26.04's mariadb-client defaults to requiring TLS on TCP
    # connections; the mariadb server in the compose stack has no SSL
    # configured, so the connection is refused.
+   local host user pass
+   host="$(my_cnf_value "$MYSQL_HOSTNAME")"
+   user="$(my_cnf_value "$MYSQL_USER")"
+   pass="$(my_cnf_value "$MYSQL_PASSWORD")"
+
    printf "[client]\nhost = %s\nuser = %s\npassword = %s\nssl = false\n[mysqldump]\nhost = %s\nuser = %s\npassword = %s\nssl = false\n" \
-      "$MYSQL_HOSTNAME" "$MYSQL_USER" "$MYSQL_PASSWORD" "$MYSQL_HOSTNAME" "$MYSQL_USER" "$MYSQL_PASSWORD" \
+      "$host" "$user" "$pass" "$host" "$user" "$pass" \
       > "$PILER_MY_CNF"
 
    give_it_to_piler "$PILER_MY_CNF"
