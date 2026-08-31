@@ -127,55 +127,61 @@ See `docker-compose.yml` for the full stack: `mysql` (MariaDB), `manticore`
 
 ### Environment variables
 
-Required (`entrypoint.sh`'s `pre_flight_check` aborts if any is missing):
+Required — `pre_flight_check` aborts the start if any is missing:
 
-- `PILER_HOSTNAME` — hostname piler identifies itself as: `hostid` in
-  `piler.conf`, the nginx vhost's `server_name`, and the web UI's site name.
-  Not the self-signed certificate's CN, which is a fixed placeholder.
-- `MYSQL_HOSTNAME`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` —
-  database connection.
+| Variable | Lands in |
+| --- | --- |
+| `PILER_HOSTNAME` | `hostid` in `piler.conf`, the nginx `server_name`, the web UI's site name |
+| `MYSQL_HOSTNAME` | `mysqlhost`, `.my.cnf`, `DB_HOSTNAME` |
+| `MYSQL_DATABASE` | `mysqldb`, `DB_DATABASE` |
+| `MYSQL_USER` | `mysqluser`, `.my.cnf`, `DB_USERNAME` |
+| `MYSQL_PASSWORD` | `mysqlpwd`, `.my.cnf`, `DB_PASSWORD` |
+
+`PILER_HOSTNAME` is not the self-signed certificate's CN, which is a fixed
+placeholder.
 
 Optional:
 
-- `RT` (default `1`, and must be `1`) — real-time manticore indexing. This
-  image only supports RT mode: manticore runs as a separate container and no
-  local `indexer` binary is shipped, so batch indexing (`RT=0`) cannot build
-  or rotate indexes. The entrypoint rejects any value other than `1`.
-- `PATH_PREFIX` — set if piler's web UI is served behind a reverse-proxy path
-  prefix. Give a bare path, no quotes: `/archive`, `archive/` and `/archive/`
-  all end up as `/archive/`, which is the form upstream concatenates with
-  relative asset paths. A value containing a quote is rejected.
-- `ADMIN_USER_PASSWORD_HASH` — if set, overwrites the built-in admin
-  account's password hash at database init time.
-- `MANTICORE_HOSTNAME` (default `manticore`), `MEMCACHED_HOSTNAME` (default
-  `memcached`) — override if those services aren't named as in
-  `docker-compose.yml`.
-- `MYSQL_PORT` — empty by default, which leaves the port to the client library
-  as piler ships it. Set it for a database listening elsewhere: it becomes
-  `mysqlport` in `piler.conf` for the daemon, a `port` line in `.my.cnf`, and is
-  appended to `DB_HOSTNAME` for the web UI. That last one is not a port field —
-  piler's PHP builds its DSN without one — but PDO parses `host:port`, which is
-  what makes a non-standard port reachable from the UI at all.
-- `MANTICORE_PORT` (default `9306`), `MANTICORE_PORT_READONLY` (default `9307`),
-  `MEMCACHED_PORT` (default `11211`) — the defaults are the standard ports:
-  `9306` is Manticore's own SQL default and `11211` memcached's, while `9307` is
-  piler's convention for Manticore's `mysql_readonly` listener. Set them to
-  reach services that listen elsewhere. `MANTICORE_PORT` governs both consumers
-  at once — `sphxport` in `piler.conf` for the daemon and `SPHINX_HOSTNAME` in
-  `config-site.php` for the web UI — so the two cannot drift. A value that is
-  not a port number aborts the start rather than leaving a config that parses
-  but never connects.
-- `PILER_STOP_DRAIN` (default `1`), `PILER_STOP_DRAIN_TIMEOUT` (default `300`),
-  `PILER_STOP_DRAIN_INTERVAL` (default `2`) — graceful stop, see below.
-- `MYSQL_WAIT_MAX_ATTEMPTS` (default `60`) — how many 5-second probes the
-  entrypoint gives the database before it aborts the start.
-- `PILER_USER` (default `piler`) — the account that owns the generated files.
-  Set in the Dockerfile; overriding it only makes sense against an image whose
-  uid/gid layout differs.
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `RT` | `1` | Real-time indexing. Must be `1`; any other value aborts the start |
+| `PATH_PREFIX` | *unset* | Path prefix when the UI is behind a reverse proxy |
+| `ADMIN_USER_PASSWORD_HASH` | *unset* | Overwrites the built-in admin's hash at schema creation |
+| `MYSQL_PORT` | *unset* | Database port. Unset leaves it to the client library |
+| `MANTICORE_HOSTNAME` | `manticore` | Manticore host |
+| `MANTICORE_PORT` | `9306` | Manticore's SQL port — its own default |
+| `MANTICORE_PORT_READONLY` | `9307` | Manticore's `mysql_readonly` port — piler's convention |
+| `MEMCACHED_HOSTNAME` | `memcached` | memcached host |
+| `MEMCACHED_PORT` | `11211` | memcached port — its own default |
+| `MYSQL_WAIT_MAX_ATTEMPTS` | `60` | 5-second probes before the start gives up on the database |
+| `PILER_STOP_DRAIN` | `1` | Drain the spool on a graceful stop, see below |
+| `PILER_STOP_DRAIN_TIMEOUT` | `300` | Seconds to keep draining |
+| `PILER_STOP_DRAIN_INTERVAL` | `2` | Seconds between spool checks |
+| `PILER_USER` | `piler` | Owner of the generated files, set in the Dockerfile |
 
-Three more exist and are not for deployments: `CONFIG_DIR`, `TMP_CONF_DIR` and
-`PILER_JS` let `tests/entrypoint-config-test.sh` drive the entrypoint against a
-throwaway directory. They default to the real paths.
+Four of those need a word more than a table cell holds.
+
+`PATH_PREFIX` takes a bare path, no quotes: `/archive`, `archive/` and
+`/archive/` all end up as `/archive/`, the form upstream concatenates with
+relative asset paths. A value containing a quote is rejected.
+
+`MYSQL_PORT` reaches three consumers in three grammars — `mysqlport` in
+`piler.conf`, a `port` line in `.my.cnf`, and appended to `DB_HOSTNAME` for the
+web UI. That last one is not a port field, piler's PHP building its DSN without
+one, but PDO parses `host:port`, which is what makes a non-standard port
+reachable from the UI at all.
+
+`MANTICORE_PORT` governs both consumers at once, `sphxport` for the daemon and
+`SPHINX_HOSTNAME` for the UI, so the two cannot drift. Any port that is not a
+number aborts the start rather than leaving a config that parses but never
+connects.
+
+`PILER_USER` only makes sense to override against an image whose uid/gid layout
+differs from this one's.
+
+Three more variables exist and are not for deployments: `CONFIG_DIR`,
+`TMP_CONF_DIR` and `PILER_JS` let `tests/entrypoint-config-test.sh` drive the
+entrypoint against a throwaway directory. They default to the real paths.
 
 Every value above is escaped for whichever grammar it lands in — sed replacement
 text, a PHP string literal, a MariaDB option file, an SQL literal — so a
