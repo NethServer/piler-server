@@ -1,4 +1,6 @@
 #!/bin/bash
+
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Offline tests for entrypoint.sh's config generation: fix_configs() driven
 # against a throwaway CONFIG_DIR, no container and no database.

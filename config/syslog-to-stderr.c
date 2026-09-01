@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
  * LD_PRELOAD shim: piler logs only through syslog(3), and a rootless container
  * has no /dev/log (uid 1000 can't create one in the runtime's /dev). This turns
  * those calls into stderr writes, so supervisord ships them to the container

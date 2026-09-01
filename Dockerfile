@@ -64,11 +64,10 @@ FROM ${BASE_IMAGE} AS runtime
 ARG PILER_VERSION
 
 LABEL org.opencontainers.image.source="https://github.com/NethServer/piler-server" \
-      org.opencontainers.image.authors="Stephane de Labrusse <stephdl@de-labrusse.fr>" \
+      org.opencontainers.image.authors="Stephane de Labrusse <stephane.delabrusse@nethesis.it>" \
       org.opencontainers.image.title="piler mail archiving server" \
       org.opencontainers.image.description="Rootless piler (email archiver) image: nginx, php-fpm and supervisord, running against external mariadb, manticore and memcached containers" \
       org.opencontainers.image.version="${PILER_VERSION}" \
-      org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.vendor="NethServer"
 
 ENV DEBIAN_FRONTEND="noninteractive" \

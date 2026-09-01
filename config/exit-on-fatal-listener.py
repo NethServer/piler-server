@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Supervisor event listener: exit the whole container on a FATAL process.
 
 supervisord's own default behaviour is to give up retrying a crash-looping

@@ -1,4 +1,6 @@
 #!/bin/sh
+
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Runs piler in the foreground for supervisord. piler writes its pidfile even
 # without -d, so rc.piler reload keeps working.
