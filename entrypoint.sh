@@ -1,4 +1,6 @@
 #!/bin/bash
+
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Entrypoint for the rootless piler image. Based on jsuto/piler's
 # docker/start.sh (piler is developed at https://github.com/jsuto/piler).
