@@ -41,8 +41,7 @@ services:
           memory: 512M
 
   piler:
-    build: .
-    image: ${PILER_IMAGE:-piler-docker:latest}
+    image: ${PILER_IMAGE:-ghcr.io/nethserver/piler-server:latest}
     container_name: piler
     init: true
     user: "1000:1000"

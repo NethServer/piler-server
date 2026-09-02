@@ -57,10 +57,15 @@ Only the files whose purpose is not obvious from the name:
 
 ## Quick start
 
+Pulls the published image, no build needed:
+
 ```sh
-./build-images.sh
-docker compose up
+docker compose up -d
 ```
+
+To run your own build instead, `./build-images.sh` tags
+`ghcr.io/nethserver/piler-server:latest` locally and `docker compose up -d`
+uses that local tag without pulling.
 
 ## Build
 
@@ -79,8 +84,12 @@ release; the `.deb` asset is resolved at build time.
 ## Run
 
 ```sh
-docker compose up
+docker compose up -d
 ```
+
+`docker-compose.yml` has no `build:` section on purpose: it only ever runs an
+image, pulled or locally built, so `up` can never silently replace a published
+tag with the working tree. Point `PILER_IMAGE` at another tag to test it.
 
 `docker-compose.yml` has the full stack: `mysql` (MariaDB), `manticore`
 (pinned to what piler 1.4.9 was built against), `memcached`, and `piler`.
