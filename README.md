@@ -9,7 +9,7 @@ base image triggers a rebuild.
 
 The container runs entirely as uid/gid `1000` (`piler`), with `CAP_DROP: ALL`
 and only `CAP_NET_BIND_SERVICE` added back so nginx/piler can bind ports
-25/80/443. There is no root inside the container, ever.
+25 and 80. There is no root inside the container, ever.
 
 That constraint shapes the Dockerfile:
 
@@ -57,10 +57,28 @@ Only the files whose purpose is not obvious from the name:
 
 ## Quick start
 
+Pulls the published image, no build needed:
+
 ```sh
-./build-images.sh
-docker compose up
+cp .env.example .env    # edit the hostname and the database password
+docker compose up -d
 ```
+
+The stack answers on `http://localhost/`; log in with the built-in
+`admin@local` (see [Default credentials](#default-credentials)).
+`docker compose pull` picks up a newer `latest`.
+
+`.env` is optional — the stack starts on the defaults without it — but
+`MYSQL_PASSWORD` and `PILER_HOSTNAME` are both read once, at the first start:
+MariaDB only applies the password while initialising its data directory, and
+mail is archived under the hostname. Changing either later means
+`docker compose down -v`, which destroys the archive. `.env.example`
+documents every knob it exposes, including the host ports to move if 25 or 80
+are already taken on your machine.
+
+To run your own build instead, `./build-images.sh` tags
+`ghcr.io/nethserver/piler-server:latest` locally and `docker compose up -d`
+uses that local tag without pulling.
 
 ## Build
 
@@ -79,13 +97,21 @@ release; the `.deb` asset is resolved at build time.
 ## Run
 
 ```sh
-docker compose up
+docker compose up -d
 ```
+
+`docker-compose.yml` has no `build:` section on purpose: it only ever runs an
+image, pulled or locally built, so `up` can never silently replace a published
+tag with the working tree. Point `PILER_IMAGE` at another tag to test it.
 
 `docker-compose.yml` has the full stack: `mysql` (MariaDB), `manticore`
 (pinned to what piler 1.4.9 was built against), `memcached`, and `piler`.
 
 ### Environment variables
+
+`docker-compose.yml` sets every one of these to the default shown, reading it
+from `.env` first. `.env.example` lists them all with the traps spelled out;
+copy it rather than editing the compose file.
 
 Required — `pre_flight_check` aborts the start if any is missing:
 
@@ -116,7 +142,21 @@ Optional:
 | `PILER_STOP_DRAIN` | `1` | Drain the spool on a graceful stop, see below |
 | `PILER_STOP_DRAIN_TIMEOUT` | `300` | Seconds to keep draining |
 | `PILER_STOP_DRAIN_INTERVAL` | `2` | Seconds between spool checks |
-| `PILER_USER` | `piler` | Owner of the generated files, set in the Dockerfile |
+| `PILER_USER` | `piler` | Owner of the generated files — must match the image's uid and the compose `user:`, so the stack never passes it |
+
+Read by compose itself, so they never reach a container:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `PILER_IMAGE` | `ghcr.io/nethserver/piler-server:latest` | Image the `piler` service runs |
+| `HOST_SMTP_PORT` | `25` | Host side of the published SMTP port |
+| `HOST_HTTP_PORT` | `80` | Host side of the published HTTP port |
+
+`MANTICORE_PORT` and `MANTICORE_PORT_READONLY` only tell piler where to
+connect: manticore's own listeners live in `config/manticore.conf`, which the
+entrypoint never touches, so either has to be changed in both places.
+`MYSQL_PORT` and `MEMCACHED_PORT` do move the server, both containers take
+theirs from the same variable.
 
 There is no `RT` variable to set: with no `indexer` in the image, real-time
 mode is the only mode, and any other value aborts the start.
@@ -200,12 +240,55 @@ not define makes piler accept mail over SMTP and never archive it.
 Every other key is yours. The same holds for `piler.conf`: a file supplied by a
 volume or a downstream module needs to list only what it actually decides.
 
+### TLS
+
+The stack publishes SMTP and HTTP only. Upstream's
+`contrib/webserver/piler-nginx.conf` carries no `listen` directive at all — no
+port, no `ssl_certificate` — and leaves the web server plumbing to whoever
+installs it; the Dockerfile injects the `listen 80`. So nothing in the image
+answers on 443, and terminating TLS is the reverse proxy's job — the same
+proxy `PATH_PREFIX` exists for. Put nginx, Traefik or whatever you already
+run in front, give it a certificate for the name in `PILER_HOSTNAME`, and
+forward to the published HTTP port.
+
+The certificate the entrypoint generates is not idle: `piler.conf` points
+`pemfile` at it with `tls_enable=1` and `tls_min_version=TLSv1.2`, so it serves
+STARTTLS on port 25. Its CN is a fixed placeholder, unrelated to
+`PILER_HOSTNAME`, which is another reason it was never fit to serve the web UI.
+
+### Startup order and restarts
+
+`depends_on` waits on a healthcheck for all three dependencies, so `up` blocks
+until MariaDB accepts connections with InnoDB initialised, manticore has its
+RT indexes loaded, and memcached answers. piler's entrypoint still polls the
+database itself (`MYSQL_WAIT_MAX_ATTEMPTS`), which is what covers the
+deployments running this image without compose.
+
+manticore's probe uses the ports from `config/manticore.conf`, not
+`MANTICORE_PORT`: the manticore container never receives that variable.
+
+`restart: unless-stopped` covers mysql, manticore and memcached, but not
+piler: `exit-on-fatal` is there to take the container down when a supervised
+service goes FATAL, and a restart policy would turn that into a flapping
+container instead of a visible stop. Restart it yourself once the cause is
+fixed.
+
+None of those policies survives a host reboot under rootless podman anyway:
+that needs `systemctl --user enable podman-restart.service`, which podman does
+not enable by default.
+
 ### Default credentials
 
 Piler ships two built-in accounts, not generated here: `admin@local` /
 `pilerrocks` and `auditor@local` / `auditor` (read-only search). The
-`MYSQL_PASSWORD` in `docker-compose.yml` is likewise a demo value. Change all
-three before exposing an instance beyond a trusted network.
+`MYSQL_PASSWORD` default is likewise a demo value. Change all three before
+exposing an instance beyond a trusted network.
+
+`admin@local`'s password can be replaced at the first start with
+`ADMIN_USER_PASSWORD_HASH` in `.env`; `auditor@local` has no such hook and has
+to be changed from the web UI. Both are only worth doing on a stack that has
+not been initialised yet, since the hash is written when the schema is
+created.
 
 This repository builds and validates the image standalone, with no
 orchestration or upgrade logic. That is what
@@ -274,6 +357,10 @@ file from `main`.
 - Ubuntu base image: tracked natively by Renovate's `docker` datasource.
 - `PILER_VERSION` and `SUPERCRONIC_VERSION`: `customManagers` regex entries
   against their upstream GitHub releases.
+- `docker-compose.yml`'s mariadb and memcached tags are series tags
+  (`11.4`, `1.6-alpine`), so Renovate has no patch to bump and a
+  `docker compose pull` picks the fixes up on its own. Only manticore is an
+  exact patch, since upstream publishes no series tag for it.
 - Checksums (`PILER_SHA256`, `SUPERCRONIC_SHA256`) are **not** managed by
   Renovate. A version-bump PR fails the build on the sha256 check until the new
   digest is pasted in by hand — copy it from the release page (URLs are in the

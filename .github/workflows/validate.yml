@@ -28,7 +28,6 @@ jobs:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Compute image reference
-        id: image
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
@@ -47,21 +46,24 @@ jobs:
             image_tag="${MANUAL_TAG}"
           fi
 
-          echo "image=${REPOBASE}/piler-server:${image_tag}" >> "$GITHUB_OUTPUT"
+          image="${REPOBASE}/piler-server:${image_tag}"
+
+          # Every later step that recreates a container resolves PILER_IMAGE
+          # again; without this the compose default silently wins and we would
+          # validate a different image than the one we pulled.
+          echo "PILER_IMAGE=${image}" >> "$GITHUB_ENV"
 
           {
             echo "### Image tested"
             echo '```'
-            echo "${REPOBASE}/piler-server:${image_tag}"
+            echo "${image}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Start the stack
-        env:
-          PILER_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           docker pull "${PILER_IMAGE}"
-          docker compose up -d --no-build
+          docker compose up -d
 
       - name: Wait for piler to be ready
         run: |
