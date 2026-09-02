@@ -283,6 +283,10 @@ file from `main`.
 - Ubuntu base image: tracked natively by Renovate's `docker` datasource.
 - `PILER_VERSION` and `SUPERCRONIC_VERSION`: `customManagers` regex entries
   against their upstream GitHub releases.
+- `docker-compose.yml`'s mariadb and memcached tags are series tags
+  (`11.4`, `1.6-alpine`), so Renovate has no patch to bump and a
+  `docker compose pull` picks the fixes up on its own. Only manticore is an
+  exact patch, since upstream publishes no series tag for it.
 - Checksums (`PILER_SHA256`, `SUPERCRONIC_SHA256`) are **not** managed by
   Renovate. A version-bump PR fails the build on the sha256 check until the new
   digest is pasted in by hand — copy it from the release page (URLs are in the

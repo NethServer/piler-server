@@ -1,6 +1,7 @@
 services:
   mysql:
-    image: mariadb:12.0.2
+    # Series tag on an LTS: patches arrive on a plain pull, majors never do.
+    image: mariadb:11.4
     container_name: mysql
     restart: unless-stopped
     cap_drop:
@@ -28,7 +29,8 @@ services:
     # :Z on the config bind mount is needed for SELinux (enforcing hosts, eg. Fedora)
     # so the manticore process can actually read the file.
     # Manticore version is pinned to 14.1.0: it's the version piler 1.4.9 was
-    # built/tested against; newer majors (eg. 25.x) break it.
+    # built/tested against; newer majors (eg. 25.x) break it. Exact patch
+    # because upstream publishes no 14.1 or 14 series tag.
     tty: true
     volumes:
       - ./config/manticore.conf:/etc/manticoresearch/manticore.conf:Z
@@ -104,7 +106,7 @@ services:
       - "manticore"
 
   memcached:
-    image: memcached
+    image: memcached:1.6-alpine
     container_name: memcached
     command: -m 64
 
