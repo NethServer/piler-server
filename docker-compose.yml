@@ -69,11 +69,9 @@ services:
   piler:
     image: ${PILER_IMAGE:-ghcr.io/nethserver/piler-server:latest}
     container_name: piler
-    # Covers a crash: the process exiting on its own is restarted, so
-    # exit-on-fatal no longer leaves a dead archive -- at the cost of looping
-    # on a fatal config error. It does NOT cover a host reboot under rootless
-    # podman, which needs `systemctl --user enable podman-restart.service`.
-    restart: unless-stopped
+    # No restart policy on purpose: exit-on-fatal takes the container down so
+    # a fatal service failure stays visible instead of flapping. An exited
+    # container is not a silent failure; a crashloop nearly is.
     init: true
     user: "1000:1000"
     cap_drop:

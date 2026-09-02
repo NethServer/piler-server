@@ -267,12 +267,15 @@ deployments running this image without compose.
 manticore's probe uses the ports from `config/manticore.conf`, not
 `MANTICORE_PORT`: the manticore container never receives that variable.
 
-`restart: unless-stopped` restarts a container whose process exits on its own,
-which is what `exit-on-fatal` does — the cost is a restart loop on a fatal
-configuration error rather than one dead container. It does **not** survive a
-host reboot under rootless podman: that needs
-`systemctl --user enable podman-restart.service`, which podman does not enable
-by default.
+`restart: unless-stopped` covers mysql, manticore and memcached, but not
+piler: `exit-on-fatal` is there to take the container down when a supervised
+service goes FATAL, and a restart policy would turn that into a flapping
+container instead of a visible stop. Restart it yourself once the cause is
+fixed.
+
+None of those policies survives a host reboot under rootless podman anyway:
+that needs `systemctl --user enable podman-restart.service`, which podman does
+not enable by default.
 
 ### Default credentials
 
