@@ -2,7 +2,8 @@ services:
   mysql:
     # Series tag on an LTS: patches arrive on a plain pull, majors never do.
     image: mariadb:11.4
-    container_name: mysql
+    # Prefixed: a bare "mysql" collides with any other stack on the host.
+    container_name: piler-mysql
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -22,7 +23,7 @@ services:
 
   manticore:
     image: manticoresearch/manticore:14.1.0
-    container_name: manticore
+    container_name: piler-manticore
     restart: unless-stopped
     # tty: true works around the manticore entrypoint chowning /dev/stdout,
     # which fails under rootless podman and (with set -e) kills the container.
@@ -107,7 +108,7 @@ services:
 
   memcached:
     image: memcached:1.6-alpine
-    container_name: memcached
+    container_name: piler-memcached
     command: -m 64
 
 volumes:
