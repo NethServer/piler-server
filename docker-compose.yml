@@ -103,11 +103,12 @@ services:
       # not the same as absent -- it would prefix with "/" and blank the hash.
       - PATH_PREFIX
       - ADMIN_USER_PASSWORD_HASH
-    # Host side only; the container keeps its own ports.
+    # Host side only; the container keeps 25 and 80. No 443: nginx here serves
+    # plain HTTP and the generated certificate is the SMTP STARTTLS one, so
+    # HTTPS belongs to a reverse proxy in front.
     ports:
       - "${HOST_SMTP_PORT:-25}:25"
       - "${HOST_HTTP_PORT:-80}:80"
-      - "443:443"
     volumes:
       - piler_etc:/etc/piler
       - piler_store:/var/piler/store

@@ -9,7 +9,7 @@ base image triggers a rebuild.
 
 The container runs entirely as uid/gid `1000` (`piler`), with `CAP_DROP: ALL`
 and only `CAP_NET_BIND_SERVICE` added back so nginx/piler can bind ports
-25/80/443. There is no root inside the container, ever.
+25 and 80. There is no root inside the container, ever.
 
 That constraint shapes the Dockerfile:
 
@@ -73,8 +73,8 @@ The stack answers on `http://localhost/`; log in with the built-in
 MariaDB only applies the password while initialising its data directory, and
 mail is archived under the hostname. Changing either later means
 `docker compose down -v`, which destroys the archive. `.env.example`
-documents every knob it exposes, including the host ports to move if they are
-already taken on your machine.
+documents every knob it exposes, including the host ports to move if 25 or 80
+are already taken on your machine.
 
 To run your own build instead, `./build-images.sh` tags
 `ghcr.io/nethserver/piler-server:latest` locally and `docker compose up -d`
@@ -239,6 +239,22 @@ not define makes piler accept mail over SMTP and never archive it.
 
 Every other key is yours. The same holds for `piler.conf`: a file supplied by a
 volume or a downstream module needs to list only what it actually decides.
+
+### TLS
+
+The stack publishes SMTP and HTTP only. Upstream's
+`contrib/webserver/piler-nginx.conf` carries no `listen` directive at all — no
+port, no `ssl_certificate` — and leaves the web server plumbing to whoever
+installs it; the Dockerfile injects the `listen 80`. So nothing in the image
+answers on 443, and terminating TLS is the reverse proxy's job — the same
+proxy `PATH_PREFIX` exists for. Put nginx, Traefik or whatever you already
+run in front, give it a certificate for the name in `PILER_HOSTNAME`, and
+forward to the published HTTP port.
+
+The certificate the entrypoint generates is not idle: `piler.conf` points
+`pemfile` at it with `tls_enable=1` and `tls_min_version=TLSv1.2`, so it serves
+STARTTLS on port 25. Its CN is a fixed placeholder, unrelated to
+`PILER_HOSTNAME`, which is another reason it was never fit to serve the web UI.
 
 ### Startup order and restarts
 
