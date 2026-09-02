@@ -240,6 +240,24 @@ not define makes piler accept mail over SMTP and never archive it.
 Every other key is yours. The same holds for `piler.conf`: a file supplied by a
 volume or a downstream module needs to list only what it actually decides.
 
+### Startup order and restarts
+
+`depends_on` waits on a healthcheck for all three dependencies, so `up` blocks
+until MariaDB accepts connections with InnoDB initialised, manticore has its
+RT indexes loaded, and memcached answers. piler's entrypoint still polls the
+database itself (`MYSQL_WAIT_MAX_ATTEMPTS`), which is what covers the
+deployments running this image without compose.
+
+manticore's probe uses the ports from `config/manticore.conf`, not
+`MANTICORE_PORT`: the manticore container never receives that variable.
+
+`restart: unless-stopped` restarts a container whose process exits on its own,
+which is what `exit-on-fatal` does — the cost is a restart loop on a fatal
+configuration error rather than one dead container. It does **not** survive a
+host reboot under rootless podman: that needs
+`systemctl --user enable podman-restart.service`, which podman does not enable
+by default.
+
 ### Default credentials
 
 Piler ships two built-in accounts, not generated here: `admin@local` /

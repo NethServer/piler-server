@@ -23,6 +23,15 @@ services:
     volumes:
       - db_data:/var/lib/mysql
       - ./config/piler.cnf:/etc/mysql/conf.d/piler.cnf:ro
+    # Upstream's own probe. --innodb_initialized rather than a bare --connect:
+    # the first start initialises the data directory and restarts the server
+    # mid-way, and a plain connect passes during that window.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized"]
+      interval: "5s"
+      timeout: "5s"
+      start_period: "60s"
+      retries: 12
 
   manticore:
     image: manticoresearch/manticore:14.1.0
@@ -39,6 +48,17 @@ services:
     volumes:
       - ./config/manticore.conf:/etc/manticoresearch/manticore.conf:Z
       - piler_manticore:/var/lib/manticore
+    # Ports are manticore.conf's own, not MANTICORE_PORT: that variable only
+    # tells piler where to dial. Looking for piler1 rather than "select 1"
+    # proves the RT indexes are loaded, which is what piler actually needs.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "mysql -h127.0.0.1 -P9306 -Ne 'show tables' | grep -q piler1 && mysql -h127.0.0.1 -P9307 -Ne 'select 1' >/dev/null"
+      interval: "5s"
+      timeout: "5s"
+      start_period: "60s"
+      retries: 12
     deploy:
       resources:
         reservations:
@@ -49,6 +69,11 @@ services:
   piler:
     image: ${PILER_IMAGE:-ghcr.io/nethserver/piler-server:latest}
     container_name: piler
+    # Covers a crash: the process exiting on its own is restarted, so
+    # exit-on-fatal no longer leaves a dead archive -- at the cost of looping
+    # on a fatal config error. It does NOT cover a host reboot under rootless
+    # podman, which needs `systemctl --user enable podman-restart.service`.
+    restart: unless-stopped
     init: true
     user: "1000:1000"
     cap_drop:
@@ -103,15 +128,30 @@ services:
           memory: 512M
         limits:
           memory: 512M
+    # piler's entrypoint waits for the database on its own, for the deployments
+    # that run this image without compose; the condition here is what makes
+    # `up` block instead of racing, and it reports the failure as a dependency.
     depends_on:
-      - "mysql"
-      - "memcached"
-      - "manticore"
+      mysql:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+      manticore:
+        condition: service_healthy
 
   memcached:
     image: memcached:1.6-alpine
     container_name: piler-memcached
+    restart: unless-stopped
     command: -m 64 -p ${MEMCACHED_PORT:-11211}
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "echo version | nc -w 2 127.0.0.1 ${MEMCACHED_PORT:-11211} | grep -q VERSION"
+      interval: "10s"
+      timeout: "5s"
+      start_period: "10s"
+      retries: 3
 
 volumes:
   db_data: {}
