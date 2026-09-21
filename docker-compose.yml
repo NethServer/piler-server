@@ -26,11 +26,17 @@ services:
     # Upstream's own probe. --innodb_initialized rather than a bare --connect:
     # the first start initialises the data directory and restarts the server
     # mid-way, and a plain connect passes during that window.
+    #
+    # start_period+retries*interval must stay above entrypoint.sh's own
+    # MYSQL_WAIT_MAX_ATTEMPTS budget (60 * 5s = 300s): piler depends_on
+    # mysql's service_healthy, so if this window is shorter, Compose aborts
+    # `up` on a slow first boot before piler's own patient retry loop ever
+    # gets a chance to run.
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized"]
       interval: "5s"
       timeout: "5s"
-      start_period: "60s"
+      start_period: "300s"
       retries: 12
 
   manticore:
