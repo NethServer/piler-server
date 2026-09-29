@@ -1,5 +1,7 @@
 # piler-server
 
+> This repository is archived. piler-server now lives in [NethServer/ns8-piler](https://github.com/NethServer/ns8-piler), under `piler-server/`, built and tested with the module.
+
 Rootless container image for [piler](https://github.com/jsuto/piler), the
 mail archiving server. Available piler images are tagged manually and rebuilt
 rarely; this one tracks Ubuntu's dated "resolute" (26.04) base tags, so a new
